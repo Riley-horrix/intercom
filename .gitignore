@@ -3,6 +3,8 @@
 build/
 .vscode
 .DS_Store
+*.wav
+audio
 
 # Adapted from:
 # https://github.com/github/gitignore/blob/master/KiCad.gitignore
