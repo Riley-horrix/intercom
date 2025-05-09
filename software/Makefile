@@ -1,32 +1,43 @@
 BUILD_DIR = ./build
 
-INCLUDE_DIR = ./include
+INCLUDES = -I./include -I./lib
 
 CC = gcc
-CC_OPT = -I$(INCLUDE_DIR)
 
-MINI_AUDIO_OPT = -ldl -lpthread -lm
+MINI_AUDIO_OPT_LINUX = -ldl -lpthread -lm 
+MINI_AUDIO_OPT_GCC   = -msse2 -mavx2
+
+CC_OPT = $(INCLUDES) $(MINI_AUDIO_OPT_GCC)
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+	CC_OPT += $(MINI_AUDIO_OPT_LINUX)
+endif
 
 include sources.mk
 
 BUILD_TARGETS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(SRC_FILES))
 BUILD_DEPENDENCIES := $(patsubst %.c, $(BUILD_DIR)/%.d, $(SRC_FILES))
 
+EXECUTABLES := $(patsubst %.c, %, $(wildcard ./*.c))
+
 -include $(BUILD_DEPENDENCIES)
 
 # Build objects from the src files
 
 $(BUILD_DIR):
-	mkdir -p $@
 	mkdir -p $@/src
+	mkdir -p $@/lib
 
 $(BUILD_DIR)/%.o: %.c
 	$(CC) $(CC_OPT) -c -MMD -MP $(RELEASE) -o $@ $<
 
 # Build executables
 
-test: $(BUILD_DIR) $(BUILD_TARGETS) 
-	gcc -o $(BUILD_DIR)/test $(BUILD_TARGETS) test.c $(CC_OPT)
+all: $(EXECUTABLES)
+
+$(EXECUTABLES): $(BUILD_DIR) $(BUILD_TARGETS) 
+	gcc -o $(BUILD_DIR)/$@ $(BUILD_TARGETS) $@.c $(CC_OPT)
 
 # Misc
 
