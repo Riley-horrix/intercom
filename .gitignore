@@ -1,52 +1,47 @@
-# Prerequisites
 *.d
-
-# Object files
 *.o
-*.ko
-*.obj
-*.elf
+build/
+.vscode
 
-# Linker output
-*.ilk
-*.map
-*.exp
+# Adapted from:
+# https://github.com/github/gitignore/blob/master/KiCad.gitignore
 
-# Precompiled Headers
-*.gch
-*.pch
+# For PCBs designed using KiCad: http://www.kicad-pcb.org/
+# Format documentation: http://kicad-pcb.org/help/file-formats/
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
+# Temporary files
+*.000
+*.bak
+*.bck
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*.kicad_prl
+*.sch-bak
+*~
+_autosave-*
+*.tmp
+*-save.pro
+*-save.kicad_pcb
+fp-info-cache
+/build
+*-backups
 
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
+# Netlist files (exported from Eeschema)
+*.net
 
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
+# Autorouter files (exported from Pcbnew)
+*.dsn
+*.ses
 
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
+# Footprint association file (exported from Pcbnew)
+*.cmp
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+# Exported BOM files
+*.xml
+*.csv
+*.tsv
+
+# Misc
+*.log
+*.raw
+.svg2shenzhen-cache
