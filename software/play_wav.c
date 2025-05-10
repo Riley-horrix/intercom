@@ -18,6 +18,8 @@ int main(int argc, char** argv) {
         return -1;
     }
 
+    ma_engine_set_volume(&engine, 0.9);
+
     ma_engine_play_sound(&engine, filePath, NULL);
 
     printf("Press Enter to quit...");

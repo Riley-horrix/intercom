@@ -14,7 +14,9 @@ ifeq ($(UNAME_S),Linux)
 	CC_OPT += $(MINI_AUDIO_OPT_LINUX)
 endif
 
-include sources.mk
+include Makefile.sources
+
+.DEFAULT_GOAL = all
 
 BUILD_TARGETS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(SRC_FILES))
 BUILD_DEPENDENCIES := $(patsubst %.c, $(BUILD_DIR)/%.d, $(SRC_FILES))
@@ -22,6 +24,10 @@ BUILD_DEPENDENCIES := $(patsubst %.c, $(BUILD_DIR)/%.d, $(SRC_FILES))
 EXECUTABLES := $(patsubst %.c, %, $(wildcard ./*.c))
 
 -include $(BUILD_DEPENDENCIES)
+
+# Build all executables
+
+all: $(EXECUTABLES)
 
 # Build objects from the src files
 
@@ -33,8 +39,6 @@ $(BUILD_DIR)/%.o: %.c
 	$(CC) $(CC_OPT) -c -MMD -MP $(RELEASE) -o $@ $<
 
 # Build executables
-
-all: $(EXECUTABLES)
 
 $(EXECUTABLES): $(BUILD_DIR) $(BUILD_TARGETS) 
 	gcc -o $(BUILD_DIR)/$@ $(BUILD_TARGETS) $@.c $(CC_OPT)
@@ -52,4 +56,4 @@ format:
 format-hard:
 	clang-format -i --verbose $(C_FILES) $(HEADER_FILES)
 
-.PHONY: format format-check test
+.PHONY: all format format-check test

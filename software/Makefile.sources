@@ -1,4 +1,8 @@
+# Src files
 SRC_FILES  = src/audio.c
+SRC_FILES += src/ring_buffer.c
+
+# Lib files
 SRC_FILES += lib/miniaudio.c
 
 export
