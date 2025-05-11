@@ -17,6 +17,7 @@ struct audio_engine engine;
 void terminate(int signum) {
     printf("\n");
     info("Terminating program with status %d", signum);
+    
     destroy_audio_engine(&engine);
     destroy_ring_buffer(&captureRB);
     destroy_ring_buffer(&playbackRB);

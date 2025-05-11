@@ -50,10 +50,4 @@ HEADER_FILES = $(shell find ./include -name "*.h")
 clean:
 	@rm -rf $(BUILD_DIR)
 
-format:
-	clang-format --dry-run $(C_FILES) $(HEADER_FILES) --verbose -Werror
-
-format-hard:
-	clang-format -i --verbose $(C_FILES) $(HEADER_FILES)
-
 .PHONY: all format format-check test
