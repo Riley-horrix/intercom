@@ -7,7 +7,7 @@ CC = gcc
 MINI_AUDIO_OPT_LINUX = -ldl -lpthread -lm 
 MINI_AUDIO_OPT_GCC   = -msse2 -mavx2
 
-CC_OPT = $(INCLUDES) $(MINI_AUDIO_OPT_GCC)
+CC_OPT = $(INCLUDES) $(MINI_AUDIO_OPT_GCC) -Wall -Werror
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
