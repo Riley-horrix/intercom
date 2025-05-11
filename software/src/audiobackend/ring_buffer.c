@@ -1,9 +1,7 @@
 #include "miniaudio.h"
 #include "common.h"
-#include "audio.h"
-#include "ring_buffer.h"
-
-static ma_result res;
+#include "audiobackend/audio.h"
+#include "audiobackend/ring_buffer.h"
 
 /**
  * Initialise given ring buffer.
@@ -11,11 +9,13 @@ static ma_result res;
  * Fails if error occurs.
  */
 void init_ring_buffer(struct ring_buffer* rb) {
+    ma_result res;
+
     if (rb->initialised) {
         return;
     }
 
-    ma_result res = ma_rb_init(BUFFER_SIZE_IN_FRAMES * FRAME_SIZE, NULL, NULL, &rb->impl);
+    res = ma_rb_init(BUFFER_SIZE_IN_FRAMES * FRAME_SIZE, NULL, NULL, &rb->impl);
 
     if (res != MA_SUCCESS) {
         ma_rb_uninit(&rb->impl);

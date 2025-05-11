@@ -3,8 +3,8 @@
 #include <string.h>
 #include "args.h"
 #include "common.h"
-#include "ring_buffer.h"
-#include "audio.h"
+#include "audiobackend/ring_buffer.h"
+#include "audiobackend/audio.h"
 
 static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount);
 static int  select_device(ma_device_info* infos, ma_uint32 count, bool useDefaults);
@@ -17,10 +17,6 @@ static int  select_device(ma_device_info* infos, ma_uint32 count, bool useDefaul
  * Will fail if an error happens.
  */
 void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* conf) {
-    if (engine->initialised) {
-        return;
-    }
-
     if (playback == NULL || capture == NULL) {
         error("Ring buffers point to NULL in audio engine");
     }
@@ -51,32 +47,25 @@ void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback
     ma_uint32 captureDeviceSelection  = select_device(pCaptureInfos, captureCount, conf->useDefaults);
 
     // Set the device configurations.
-    engine->config = ma_device_config_init(ma_device_type_duplex);
+    ma_device_config config = ma_device_config_init(ma_device_type_duplex);
 
-    engine->config.capture.channels  = CHANNELS;
-    engine->config.playback.channels = CHANNELS;
-    engine->config.capture.format  = FORMAT;
-    engine->config.playback.format = FORMAT;
+    config.capture.channels  = CHANNELS;
+    config.playback.channels = CHANNELS;
+    config.capture.format  = FORMAT;
+    config.playback.format = FORMAT;
 
-    engine->config.capture.pDeviceID  = &pCaptureInfos[captureDeviceSelection].id;
-    engine->config.playback.pDeviceID = &pPlaybackInfos[playbackDeviceSelection].id;
+    config.capture.pDeviceID  = &pCaptureInfos[captureDeviceSelection].id;
+    config.playback.pDeviceID = &pPlaybackInfos[playbackDeviceSelection].id;
 
-    engine->config.sampleRate   = SAMPLE_RATE;
-    engine->config.dataCallback = &miniaudio_data_callback;
+    config.sampleRate   = SAMPLE_RATE;
+    config.dataCallback = &miniaudio_data_callback;
 
     // Set the engine as the user data
-    engine->config.pUserData    = engine;
+    config.pUserData    = engine;
 
-    if ((res = ma_device_init(&engine->context, &engine->config, &engine->device)) != MA_SUCCESS) {
+    if ((res = ma_device_init(&engine->context, &config, &engine->device)) != MA_SUCCESS) {
         ma_error("Failed to initialise device", res);
     }
-
-    if ((res = ma_device_start(&engine->device)) != MA_SUCCESS) {
-        ma_device_uninit(&engine->device);
-        ma_error("Failed to start playback device", res);
-    }
-
-    engine->initialised = true;
 }
 
 /**
@@ -85,34 +74,75 @@ void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback
  * This function does not destroy the ring buffers.
  */
 void destroy_audio_engine(struct audio_engine* engine) {
-    if (!engine->initialised) {
-        return;
-    }
     ma_device_uninit(&engine->device);
-    engine->initialised = false;
+    ma_context_uninit(&engine->context);
 }
 
+int audio_engine_start(struct audio_engine* engine) {
+    ma_result res;
+
+    if ((res = ma_device_start(&engine->device)) != MA_SUCCESS) {
+        ma_warn("Failed to start audio device", res);
+        return ST_FAIL;
+    }
+
+    return ST_GOOD;
+}
+
+int audio_engine_stop(struct audio_engine* engine) {
+    ma_result res;
+
+    if ((res = ma_device_stop(&engine->device)) != MA_SUCCESS) {
+        ma_warn("Failed to stop audio device", res);
+        return ST_FAIL;
+    }
+
+    return ST_GOOD;
+}
+
+/**
+ * Main miniaudio device data callback.
+ * 
+ * This function is called from within the miniaudio worker thread.
+ */
 static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
     // Extract engine from data
     struct audio_engine* engine = (struct audio_engine*) pDevice->pUserData;
+    
+    size_t sizeBytes;
+    size_t expected = frameCount * FRAME_SIZE;
+    void* buffer;
 
     if (pOutput != NULL) {
-        size_t sizeBytes = frameCount * FRAME_SIZE;
-        void* buffer;
-
+        sizeBytes = expected;
         if (ring_buffer_acquire_read(engine->playback, &sizeBytes, &buffer) != ST_GOOD) {
-            warn("err 10");
+            warn("Failed to acquire a read pointer to the ring buffer");
+            goto write_playback;
         }
 
         memcpy(pOutput, buffer, sizeBytes);
 
         if (ring_buffer_commit_read(engine->playback, sizeBytes) != ST_GOOD) {
-            warn("err 11");
+            warn("Failed to commit a read to the ring buffer");
+            goto write_playback;
         }
     }
-    
+
+write_playback:
+
     if (pInput != NULL) {
-        // Dont input for now
+        sizeBytes = expected;
+        if (ring_buffer_acquire_write(engine->playback, &sizeBytes, &buffer) != ST_GOOD) {
+            warn("Failed to acquire a write pointer to the ring buffer");
+            return;
+        }
+
+        memcpy(pOutput, buffer, sizeBytes);
+
+        if (ring_buffer_commit_write(engine->playback, sizeBytes) != ST_GOOD) {
+            warn("Failed to commit a write to the ring buffer");
+            return;
+        }
     }
 }
 

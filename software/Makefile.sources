@@ -1,6 +1,6 @@
 # Src files
-SRC_FILES  = src/audio.c
-SRC_FILES += src/ring_buffer.c
+SRC_FILES  = src/audiobackend/audio.c
+SRC_FILES += src/audiobackend/ring_buffer.c
 SRC_FILES += src/common.c
 SRC_FILES += src/args.c
 

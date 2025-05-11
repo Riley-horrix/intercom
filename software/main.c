@@ -3,10 +3,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "ring_buffer.h"
+#include "audiobackend/ring_buffer.h"
 #include "args.h"
 #include "common.h"
-#include "audio.h"
+#include "audiobackend/audio.h"
 
 struct ring_buffer captureRB;
 struct ring_buffer playbackRB;
@@ -17,7 +17,7 @@ struct audio_engine engine;
 void terminate(int signum) {
     printf("\n");
     info("Terminating program with status %d", signum);
-    
+
     destroy_audio_engine(&engine);
     destroy_ring_buffer(&captureRB);
     destroy_ring_buffer(&playbackRB);

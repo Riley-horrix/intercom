@@ -12,12 +12,11 @@
 #define BIT(n) (0x1 << n)
 
 enum ST_CODE {
-    ST_GOOD        = 0,
-    ST_MALLOC_FAIL = 1,
-    ST_INVALID_ARG = 2,
-    ST_FAIL   = 3
+    ST_GOOD            = 0,
+    ST_MALLOC_FAIL     = 1,
+    ST_INVALID_ARG     = 2,
+    ST_FAIL            = 3,
+    ST_NOT_INITIALISED = 4
 };    
-
-extern const char* errorStatus;
 
 #endif

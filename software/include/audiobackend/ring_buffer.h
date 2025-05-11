@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "audio.h"
+#include "audiobackend/audio.h"
 
 /**
  * The following is a ring buffer for a single producer thread and a single

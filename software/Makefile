@@ -32,7 +32,8 @@ all: $(EXECUTABLES)
 # Build objects from the src files
 
 $(BUILD_DIR):
-	mkdir -p $@/src
+	mkdir -p $@/src/logicbackend
+	mkdir -p $@/src/audiobackend
 	mkdir -p $@/lib
 
 $(BUILD_DIR)/%.o: %.c

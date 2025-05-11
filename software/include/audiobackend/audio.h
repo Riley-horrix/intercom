@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include "args.h"
-#include "ring_buffer.h"
+#include "audiobackend/ring_buffer.h"
 #include "miniaudio.h"
 
 // Defines for miniaudio
@@ -13,20 +13,26 @@
  * 
  * Also prints an error code string for mini_audio, given the ma_result `err`.
  */
-#define ma_error(fmt, err, ...) error(fmt ", %s", ma_result_description(err), ##__VA_ARGS__)
+#define ma_error(fmt, err, ...) error(fmt ", cause : %s", ma_result_description(err), ##__VA_ARGS__)
 
 /**
- * Call the given mini audio function and set the errorStatus if an error
- * occurs.
+ * Print a warning.
+ * 
+ * Also prints an error code string for mini_audio, given the ma_result `err`.
+ */
+#define ma_warn(fmt, err, ...) warn(fmt ", cause : %s", ma_result_description(err) , ##__VA_ARGS__)
+
+/**
+ * Call the given mini audio function and translate error to ST.
  * 
  * Returns ST_CODE
  */
 #define ma_call(f) \
-    (res = f, res == MA_SUCCESS ? ST_GOOD : (errorStatus = ma_result_description(res), ST_FAIL))
+    (f == MA_SUCCESS ? ST_GOOD : ST_FAIL)
 
 #define FORMAT ma_format_s16
 #define CHANNELS 1
-#define FRAME_SIZE ma_get_bytes_per_frame(FORMAT, CHANNELS) // Must update with FORMAT
+#define FRAME_SIZE ma_get_bytes_per_frame(FORMAT, CHANNELS)
 #define SAMPLE_RATE ma_standard_sample_rate_48000
 
 /**
@@ -45,16 +51,16 @@
 
 struct audio_engine {
     ma_context context;
-    ma_device_config config;
     ma_device device;
     struct ring_buffer* playback;
     struct ring_buffer* capture;
-    bool initialised;
-    // bool started;
 };
 
 
 extern void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* conf);
 extern void destroy_audio_engine(struct audio_engine* engine);
+
+extern int audio_engine_start(struct audio_engine* engine);
+extern int audio_engine_stop(struct audio_engine* engine);
 
 #endif
