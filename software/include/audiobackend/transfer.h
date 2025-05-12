@@ -3,8 +3,10 @@
 
 #include <pthread.h>
 #include <unistd.h>
-#include "audiobackend/audio_backend.h"
 #include "audiobackend/ring_buffer.h"
+#include "audiobackend/audio_backend.h"
+
+#define TRANSFER_REQUEST_SIZE 10000 // 10kb
 
 /**
  * Most of the information here is read only for the child loop.

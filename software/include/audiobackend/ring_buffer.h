@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "miniaudio.h"
 #include "audiobackend/audio.h"
 
 /**

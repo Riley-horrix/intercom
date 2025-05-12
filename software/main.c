@@ -3,26 +3,33 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
-#include "audiobackend/ring_buffer.h"
+#include <sys/mman.h>
 #include "args.h"
 #include "common.h"
+#include "audiobackend/ring_buffer.h"
 #include "audiobackend/audio.h"
+#include "audiobackend/audio_backend.h"
 
-struct ring_buffer captureRB;
-struct ring_buffer playbackRB;
+struct audio_backend* engine;
 
-struct audio_engine engine;
+void* create_shared_memory(size_t size) {
+    // Our memory buffer will be readable and writable:
+    int protection = PROT_READ | PROT_WRITE;
 
-// Destroy all allocated structures & processes
-void terminate(int signum) {
-    printf("\n");
-    info("Terminating program with status %d", signum);
+    // The buffer will be shared (meaning other processes can access it), but
+    // anonymous (meaning third-party processes cannot obtain an address for it),
+    // so only this process and its children will be able to use it:
+    int visibility = MAP_SHARED | MAP_ANONYMOUS;
 
-    destroy_audio_engine(&engine);
-    destroy_ring_buffer(&captureRB);
-    destroy_ring_buffer(&playbackRB);
+    // The remaining parameters to `mmap()` are not important for this use case,
+    // but the manpage for `mmap` explains their purpose.
+    return mmap(NULL, size, protection, visibility, -1, 0);
+}
 
-    exit(signum);
+void terminate(int num) {
+    (void)num;
+    destroy_audio_backend(engine);
+    exit(num);
 }
 
 int main(int argc, char** argv) {
@@ -30,66 +37,17 @@ int main(int argc, char** argv) {
     struct program_conf conf;
     parse_args(&conf, argc, argv);
 
-    // Setup termination handler
-    struct sigaction action;
-    memset(&action, 0, sizeof(action));
-    action.sa_handler = &terminate;
-    sigaction(SIGTERM, &action, NULL);
-    sigaction(SIGINT, &action, NULL);
+    engine = (struct audio_backend*)create_shared_memory(sizeof(*engine));
 
-    info("Initialising ring buffers");
-    
-    init_ring_buffer(&captureRB);
-    init_ring_buffer(&playbackRB);
+    info("Initialising audio backend");
+    init_audio_backend(engine, &conf);
 
-    info("Initialising audio engine");
-    
-    init_audio_engine(&engine, &playbackRB, &captureRB, &conf);
+    struct audio_backend_start_info info;
+    audio_backend_start(engine, &info);
 
-    // info("Initialising backend engine");
+    signal(SIGINT, terminate);
 
-    ma_waveform_config config = ma_waveform_config_init(
-        FORMAT,
-        CHANNELS,
-        SAMPLE_RATE,
-        ma_waveform_type_sine,
-        0.01, 
-        220);
-    
-    ma_waveform waveform;
-    ma_result result = ma_waveform_init(&config, &waveform);
-    if (result != MA_SUCCESS) {
-        error("Failed to initialise waveform");
-    }
+    while (true) { }
 
-    uint32_t bufferMin = 5000; // 5 kb
-    uint32_t bufferWrite = 100000; // 100 kb
-
-    int32_t dist;
-    
-    while (true) {
-        // 'Read' data from the capture ring buffer
-        ring_buffer_seek_read(&captureRB, ring_buffer_pointer_distance(&captureRB));
-
-        // If data left in read buffer is less than a constant, write data in
-        if ((dist = ring_buffer_pointer_distance(&playbackRB)) < bufferMin) {
-            size_t toWrite = bufferWrite;
-            void* buffer;
-            if (ring_buffer_acquire_write(&playbackRB, &toWrite, &buffer) != ST_GOOD) {
-                warn("err 1");
-            }
-            size_t frameCount = toWrite / FRAME_SIZE;
-            // uint64_t framesRead = 0;
-
-            if (ma_waveform_read_pcm_frames(&waveform, buffer, frameCount, NULL) != MA_SUCCESS) {
-                warn("err 2");
-            }
-
-            if (ring_buffer_commit_write(&playbackRB, frameCount * FRAME_SIZE) != ST_GOOD) {
-                warn("err 3");
-            }
-        }
-    }
-
-    terminate(0);
+    destroy_audio_backend(engine);
 }

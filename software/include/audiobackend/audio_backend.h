@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "audiobackend/audio.h"
+#include "audiobackend/audio_backend_start_info.h"
 #include "audiobackend/transfer.h"
 #include "audiobackend/ring_buffer.h"
 
@@ -17,14 +18,7 @@ struct audio_backend {
     bool started;
 };
 
-#define IPV4_MAX_STRLEN 16
-
-struct audio_backend_start_info {
-    unsigned short port;
-    char ipv4[IPV4_MAX_STRLEN];
-};
-
-extern void init_audio_backend(struct audio_backend* backend);
+extern void init_audio_backend(struct audio_backend* backend, struct program_conf* config);
 extern void destroy_audio_backend(struct audio_backend* backend);
 
 extern int  audio_backend_start(struct audio_backend* backend, struct audio_backend_start_info* info);

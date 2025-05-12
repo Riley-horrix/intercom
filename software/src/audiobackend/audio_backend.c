@@ -1,13 +1,13 @@
 #include "common.h"
 #include "args.h"
 #include "audiobackend/audio.h"
+#include "audiobackend/audio_backend.h"
 #include "audiobackend/transfer.h"
 #include "audiobackend/ring_buffer.h"
-#include "audiobackend/audio_backend.h"
 
 void init_audio_backend(struct audio_backend* backend, struct program_conf* config) {
     if (backend->initialised) {
-        return ST_GOOD;
+        return;
     }
 
     info("Initialising ring buffers");
@@ -18,14 +18,14 @@ void init_audio_backend(struct audio_backend* backend, struct program_conf* conf
     init_audio_engine(&backend->audio_engine, &backend->playbackRB, &backend->captureRB, config);
 
     info("Initialising transfer engine");
-    init_transfer_engine(&backend->audio_engine, &backend->playbackRB, &backend->captureRB, config);
+    init_transfer_engine(&backend->transfer_engine, &backend->playbackRB, &backend->captureRB, config);
 
     backend->initialised = true;
 }
 
 void destroy_audio_backend(struct audio_backend* backend) {
     if (!backend->initialised) {
-        return ST_GOOD;
+        return;
     }
 
     info("Destroying ring buffers");
