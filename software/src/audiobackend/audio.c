@@ -61,7 +61,7 @@ void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback
     config.dataCallback = &miniaudio_data_callback;
 
     // Set the engine as the user data
-    config.pUserData    = engine;
+    config.pUserData = engine;
 
     if ((res = ma_device_init(&engine->context, &config, &engine->device)) != MA_SUCCESS) {
         ma_error("Failed to initialise device", res);
@@ -120,6 +120,8 @@ static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const voi
             goto write_playback;
         }
 
+        info("bytes to read : %zu", sizeBytes);
+
         memcpy(pOutput, buffer, sizeBytes);
 
         if (ring_buffer_commit_read(engine->playback, sizeBytes) != ST_GOOD) {
@@ -132,14 +134,14 @@ write_playback:
 
     if (pInput != NULL) {
         sizeBytes = expected;
-        if (ring_buffer_acquire_write(engine->playback, &sizeBytes, &buffer) != ST_GOOD) {
+        if (ring_buffer_acquire_write(engine->capture, &sizeBytes, &buffer) != ST_GOOD) {
             warn("Failed to acquire a write pointer to the ring buffer");
             return;
         }
 
-        memcpy(pOutput, buffer, sizeBytes);
+        memcpy(buffer, pInput, sizeBytes);
 
-        if (ring_buffer_commit_write(engine->playback, sizeBytes) != ST_GOOD) {
+        if (ring_buffer_commit_write(engine->capture, sizeBytes) != ST_GOOD) {
             warn("Failed to commit a write to the ring buffer");
             return;
         }

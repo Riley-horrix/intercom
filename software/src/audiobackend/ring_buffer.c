@@ -15,9 +15,36 @@ void init_ring_buffer(struct ring_buffer* rb) {
         return;
     }
 
-    res = ma_rb_init(BUFFER_SIZE_IN_FRAMES * FRAME_SIZE, NULL, NULL, &rb->impl);
+    rb->size = BUFFER_SIZE_IN_FRAMES * FRAME_SIZE;
+    rb->shrBuffer = NULL;
+
+    res = ma_rb_init(rb->size, NULL, NULL, &rb->impl);
 
     if (res != MA_SUCCESS) {
+        ma_rb_uninit(&rb->impl);
+        ma_error("Failed to initialise ring buffer", res);
+    }
+
+    rb->initialised = true;
+}
+
+/**
+ * Initialise a ring buffer using shared memory.
+ * 
+ * Fails if error occurs.
+ */
+void init_ring_buffer_shr(struct ring_buffer* rb) {
+    ma_result res;
+
+    if (rb->initialised) {
+        return;
+    }
+
+    // Allocate buffer
+    rb->size = BUFFER_SIZE_IN_FRAMES * FRAME_SIZE;
+    rb->shrBuffer = create_shared_memory(rb->size);
+
+    if ((res = ma_rb_init(rb->size, rb->shrBuffer, NULL, &rb->impl)) != MA_SUCCESS) {
         ma_rb_uninit(&rb->impl);
         ma_error("Failed to initialise ring buffer", res);
     }
@@ -32,7 +59,13 @@ void destroy_ring_buffer(struct ring_buffer* rb) {
     if (!rb->initialised) {
         return;
     }
+
     ma_rb_uninit(&rb->impl);
+
+    if (rb->shrBuffer != NULL) {
+        destroy_shared_memory(rb->shrBuffer, rb->size);
+    }
+
     rb->initialised = false;
 }
 

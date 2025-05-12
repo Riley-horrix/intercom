@@ -19,4 +19,7 @@ enum ST_CODE {
     ST_NOT_INITIALISED = 4
 };    
 
+extern void* create_shared_memory(size_t size);
+extern int destroy_shared_memory(void* memory, size_t size);
+
 #endif

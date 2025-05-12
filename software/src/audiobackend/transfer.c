@@ -20,13 +20,13 @@ static void wait_for_start(struct transfer_engine* engine);
 static void transfer_engine_main(struct transfer_engine* engine);
 static void transfer_engine_waveform(struct transfer_engine* engine);
 
-void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* captureRB, struct ring_buffer* playbackRB, struct program_conf* config) {
-    if (captureRB == NULL || playbackRB == NULL) {
+void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* config) {
+    if (capture == NULL || playback == NULL) {
         error("Ring buffers point to NULL in transfer engine");
     }
 
-    engine->capture = captureRB;
-    engine->playback = playbackRB;
+    engine->capture = capture;
+    engine->playback = playback;
     engine->started = false;
 
     int err;
@@ -129,14 +129,15 @@ static void transfer_engine_main(struct transfer_engine* engine) {
 #endif
             0);
 
-        // Have to set non blocking manually on macos
-#ifndef linux
-
+        // Check for valid socket id
         if (sockfd < 0) {
             warn("Failed to initialise socket with code : %d", sockfd);
             continue;
         }
 
+        // Have to set non blocking manually on macos
+
+#ifndef linux
         // Read existing socket flags
         int flags;
         if ((flags = fcntl(sockfd, F_GETFL, 0)) < 0) {
@@ -259,14 +260,18 @@ static void transfer_engine_waveform(struct transfer_engine* engine) {
         if ((dist = ring_buffer_pointer_distance(engine->playback)) < bufferMin) {
             size_t toWrite = bufferWrite;
             void* buffer;
+
             if (ring_buffer_acquire_write(engine->playback, &toWrite, &buffer) != ST_GOOD) {
                 warn("Failed to acquire write pointer from ring buffer");
             }
+
             size_t frameCount = toWrite / FRAME_SIZE;
 
             if (ma_waveform_read_pcm_frames(&waveform, buffer, frameCount, NULL) != MA_SUCCESS) {
                 warn("Failed to read pcm frames");
             }
+
+            info("Wrote %lu to playback", frameCount * FRAME_SIZE);
 
             if (ring_buffer_commit_write(engine->playback, frameCount * FRAME_SIZE) != ST_GOOD) {
                 warn("Failed to commit the ring buffer write");

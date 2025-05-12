@@ -17,10 +17,13 @@
 
 struct ring_buffer {
     ma_rb impl;
+    void* shrBuffer; // Shared memory buffer (NULLABLE)
+    int size;
     bool initialised;
 };
 
 extern void init_ring_buffer(struct ring_buffer* rb);
+extern void init_ring_buffer_shr(struct ring_buffer* rb);
 extern void destroy_ring_buffer(struct ring_buffer* rb);
 
 extern int ring_buffer_acquire_read(struct ring_buffer* rb, size_t* size, void** buffer);

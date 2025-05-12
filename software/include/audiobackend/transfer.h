@@ -27,7 +27,7 @@ struct transfer_engine {
     bool started;
 };
 
-extern void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* captureRB, struct ring_buffer* playbackRB, struct program_conf* config);
+extern void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* config);
 extern void destroy_transfer_engine(struct transfer_engine* engine);
 
 

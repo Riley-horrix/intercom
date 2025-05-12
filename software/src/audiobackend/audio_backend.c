@@ -11,8 +11,8 @@ void init_audio_backend(struct audio_backend* backend, struct program_conf* conf
     }
 
     info("Initialising ring buffers");
-    init_ring_buffer(&backend->captureRB);
-    init_ring_buffer(&backend->playbackRB);
+    init_ring_buffer_shr(&backend->captureRB);
+    init_ring_buffer_shr(&backend->playbackRB);
 
     info("Initialising audio engine");
     init_audio_engine(&backend->audio_engine, &backend->playbackRB, &backend->captureRB, config);
