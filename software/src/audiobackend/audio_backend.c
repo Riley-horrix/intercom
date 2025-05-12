@@ -28,14 +28,14 @@ void destroy_audio_backend(struct audio_backend* backend) {
         return;
     }
 
-    info("Destroying ring buffers");
+    info("Destroying transfer engine");
     destroy_transfer_engine(&backend->transfer_engine);
-    destroy_audio_engine(&backend->audio_engine);
 
     info("Destroying audio engine");
+    destroy_audio_engine(&backend->audio_engine);
+    
+    info("Destroying ring buffers");
     destroy_ring_buffer(&backend->captureRB);
-
-    info("Destroying transfer engine");
     destroy_ring_buffer(&backend->playbackRB);
 
     backend->initialised = false;

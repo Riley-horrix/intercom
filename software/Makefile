@@ -43,6 +43,9 @@ $(BUILD_DIR)/%.o: %.c
 
 $(EXECUTABLES): $(BUILD_DIR) $(BUILD_TARGETS) 
 	gcc -o $(BUILD_DIR)/$@ $(BUILD_TARGETS) $@.c $(CC_OPT)
+	@if [ -n "$(filter $@, $(MAKECMDGOALS))" ]; then \
+	  ./$(BUILD_DIR)/$@ $(filter-out $@, $(MAKECMDGOALS)); \
+	fi
 
 # Misc
 

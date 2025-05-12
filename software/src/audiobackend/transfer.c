@@ -6,19 +6,17 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#define DEBUG
-#ifdef DEBUG
-#include "miniaudio.h"
-#include "audiobackend/audio.h"
-#endif
 #include "common.h"
 #include "audiobackend/audio_backend.h"
 #include "audiobackend/transfer.h"
 
+#include "miniaudio.h"
+#include "audiobackend/audio.h"
+
 static void handle_child_signal(int sigid);
 static void wait_for_start(struct transfer_engine* engine);
 static void transfer_engine_main(struct transfer_engine* engine);
-static void transfer_engine_waveform(struct transfer_engine* engine);
+static void transfer_engine_debug(struct transfer_engine* engine);
 
 void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* config) {
     if (capture == NULL || playback == NULL) {
@@ -31,13 +29,25 @@ void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* pl
 
     int err;
 
-    if ((err = pthread_mutex_init(&engine->startMut, NULL))) {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+
+    pthread_condattr_t condAttr;
+    pthread_condattr_init(&condAttr);
+
+    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+    pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
+
+    if ((err = pthread_mutex_init(&engine->startMut, &attr))) {
         error("Failed to initialise transfer mutex");
     }
 
-    if ((err = pthread_cond_init(&engine->startCond, NULL))) {
+    if ((err = pthread_cond_init(&engine->startCond, &condAttr))) {
         error("Failed to initialise transfer condition");
     }
+
+    pthread_mutexattr_destroy(&attr);
+    pthread_condattr_destroy(&condAttr);
 
     // Register any child signals    
     if (signal(SIGCHLD, &handle_child_signal) == SIG_ERR) {
@@ -58,11 +68,10 @@ void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* pl
         return;
     } else {
         // Child thread
-        transfer_engine_waveform(engine);
+        // transfer_engine_main(engine);
+        (void)transfer_engine_main;
 
-        if (false) {
-            transfer_engine_main(engine);
-        }
+        transfer_engine_debug(engine);
             
         // This should never be reached - thread should be killed in main func
         return;
@@ -89,14 +98,15 @@ int transfer_engine_start(struct transfer_engine* engine, struct audio_backend_s
     // Start the process
     pthread_mutex_lock(&engine->startMut);
     engine->started = true;
+    info("engine started");
+    pthread_cond_signal(&engine->startCond);
     pthread_mutex_unlock(&engine->startMut);
-    
-    pthread_cond_broadcast(&engine->startCond);
     return ST_GOOD;
 }
 
 int transfer_engine_stop(struct transfer_engine* engine) {
     // Stop the process
+    info("engine stopped");
     engine->started = false;
     info("stop");
 
@@ -225,9 +235,8 @@ transfer_engine_cleanup:
     }
 }
 
-#ifdef DEBUG
 
-static void transfer_engine_waveform(struct transfer_engine* engine) {
+static void transfer_engine_debug(struct transfer_engine* engine) {
     ma_waveform_config config = ma_waveform_config_init(
         FORMAT,
         CHANNELS,
@@ -250,7 +259,7 @@ static void transfer_engine_waveform(struct transfer_engine* engine) {
     while (true) {
         // info("here");
         if (!engine->started) {
-            // wait_for_start(engine);
+            wait_for_start(engine);
         }
 
         // 'Read' data from the capture ring buffer
@@ -280,14 +289,13 @@ static void transfer_engine_waveform(struct transfer_engine* engine) {
     }
 }
 
-#endif
-
 static void wait_for_start(struct transfer_engine* engine) {
     info("g");
     pthread_mutex_lock(&engine->startMut);
-    info("h");
+    info("started : %s", engine->started ? "t" : "f");
     while (!engine->started) {
         pthread_cond_wait(&engine->startCond, &engine->startMut);
+        info("awoken");
     }
     pthread_mutex_unlock(&engine->startMut);
 }
