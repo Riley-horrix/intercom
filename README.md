@@ -26,10 +26,10 @@ You must ensure that both the USB sound-card, and the AUX adapter are both TRRS 
 Next is connecting the Raspberry Pi to the rotary dialer. The rotary dialler works by disconnecting a cable n times over the course of it turning, with n representing the number dialled. To interpret this, you will need to :
 - First connect a digital input pin to one side of the dialler.
 - Connect the other side of the dialler to ground.
-- Pull the pin up (handled in the code)
+- Pull the pin up (handled in code)
 
 The ringer is more complicated since it takes alternating current at around 60 VAC, 25 Hz. (TODO)
 
 ## Extended Goals
-- Implement a website hosted on the server that users can use to manage their network of intercoms, i.e. change numbers, block phones, check status, etc.
 - Implement complete end-to-end encryption of all data transferred over the network.
+- Implement a website hosted on the server that users can use to manage their network of intercoms, i.e. change numbers, block phones, check status, etc.

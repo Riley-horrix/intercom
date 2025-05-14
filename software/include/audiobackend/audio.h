@@ -2,9 +2,9 @@
 #define SRC_AUDIO_H
 
 #include <stdbool.h>
+#include "miniaudio.h"
 #include "args.h"
 #include "audiobackend/ring_buffer.h"
-#include "miniaudio.h"
 
 // Defines for miniaudio
 
@@ -13,14 +13,14 @@
  * 
  * Also prints an error code string for mini_audio, given the ma_result `err`.
  */
-#define ma_error(fmt, err, ...) error(fmt ", cause : %s", ma_result_description(err), ##__VA_ARGS__)
+#define ma_error(fmt, err, ...) error(fmt ", cause: %s", ma_result_description(err), ##__VA_ARGS__)
 
 /**
  * Print a warning.
  * 
  * Also prints an error code string for mini_audio, given the ma_result `err`.
  */
-#define ma_warn(fmt, err, ...) warn(fmt ", cause : %s", ma_result_description(err) , ##__VA_ARGS__)
+#define ma_warn(fmt, err, ...) warn(fmt ", cause: %s", ma_result_description(err) , ##__VA_ARGS__)
 
 /**
  * Call the given mini audio function and translate error to ST.
@@ -52,6 +52,7 @@
 struct audio_engine {
     ma_context context;
     ma_device device;
+    ma_biquad biquad;
     struct ring_buffer* playback;
     struct ring_buffer* capture;
 };

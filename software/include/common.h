@@ -2,12 +2,16 @@
 #define SRC_COMMON_H
 
 #include <stdio.h>
+#include <errno.h>
 #include <signal.h>
 
-#define error(fmt, ...) (fprintf(stderr, "\e[31m[ERROR]\e[0m " fmt "!\n", ##__VA_ARGS__), raise(SIGTERM))
-#define warn(fmt, ...) fprintf(stdout, "\e[93m[WARN]\e[0m " fmt "!\n", ##__VA_ARGS__)
-#define info(fmt, ...) fprintf(stdout, "\e[32m[info]\e[0m " fmt ".\n", ##__VA_ARGS__)
-#define prompt(fmt, ...) fprintf(stdout, "\e[96m" fmt "\e[0m", ##__VA_ARGS__)
+#define error(fmt, ...) (fprintf(stderr, "\e[31m[ERROR]\e[0m " fmt "!\n" , ##__VA_ARGS__), raise(SIGTERM))
+#define warn(fmt, ...) fprintf(stdout, "\e[93m[WARN]\e[0m " fmt "!\n" , ##__VA_ARGS__)
+#define info(fmt, ...) fprintf(stdout, "\e[32m[info]\e[0m " fmt ".\n" , ##__VA_ARGS__)
+#define prompt(fmt, ...) fprintf(stdout, "\e[96m" fmt "\e[0m" , ##__VA_ARGS__)
+
+#define stl_error(code, fmt, ...) error(fmt ", cause: %s" , ##__VA_ARGS__, strerror(code))
+#define stl_warn(code, fmt, ...) warn(fmt ", cause: %s" , ##__VA_ARGS__, strerror(code))
 
 #define BIT(n) (0x1 << n)
 

@@ -14,9 +14,11 @@
 #include "audiobackend/audio.h"
 
 static void handle_child_signal(int sigid);
-static void wait_for_start(struct transfer_engine* engine);
+static int  wait_for_start(struct transfer_engine* engine);
 static void transfer_engine_main(struct transfer_engine* engine);
 static void transfer_engine_debug(struct transfer_engine* engine);
+
+bool childKilled = false;
 
 void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* config) {
     if (capture == NULL || playback == NULL) {
@@ -29,15 +31,26 @@ void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* pl
 
     int err;
 
+    // Initialise the attributes
     pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
+    if ((err = pthread_mutexattr_init(&attr))) {
+        stl_error(err, "Failed to initialise mutex attributes");
+    }
 
     pthread_condattr_t condAttr;
-    pthread_condattr_init(&condAttr);
+    if ((err = pthread_condattr_init(&condAttr))) {
+        stl_error(err, "Failed to initialise condition attributes");
+    }
 
-    pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-    pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED);
+    // Set the mutex and condition variable to function in shared memory
+    if ((err = pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED))) {
+        stl_error(err, "Failed to set shared status on mutex");
+    }
+    if ((err = pthread_condattr_setpshared(&condAttr, PTHREAD_PROCESS_SHARED))) {
+        stl_error(err, "Failed to set shared status on condition");
+    }
 
+    // Initialise the mutex and condition variable
     if ((err = pthread_mutex_init(&engine->startMut, &attr))) {
         error("Failed to initialise transfer mutex");
     }
@@ -46,19 +59,29 @@ void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* pl
         error("Failed to initialise transfer condition");
     }
 
-    pthread_mutexattr_destroy(&attr);
-    pthread_condattr_destroy(&condAttr);
+    // Destroy the attributes
+    if ((err = pthread_mutexattr_destroy(&attr))) {
+        stl_error(err, "Failed to destroy mutex attributes");
+    }
+    if ((err = pthread_condattr_destroy(&condAttr))) {
+        stl_error(err, "Failed to destroy condition attributes");
+    }
 
-    // Register any child signals    
-    if (signal(SIGCHLD, &handle_child_signal) == SIG_ERR) {
-        error("Transfer engine failed to register signal handler");
+    // Register child signal handler
+    struct sigaction sa;
+    sa.sa_handler = handle_child_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+
+    if ((err = sigaction(SIGCHLD, &sa, NULL))) {
+        stl_error(err, "Failed to register signal handler in transfer engine");
     }
 
     // For the process
     pid_t pid = fork();
 
     if (pid == -1) {
-        error("Transfer engine failed to fork");
+        stl_error(errno, "Transfer engine failed to fork");
     }
 
     if (pid != 0) {
@@ -67,10 +90,8 @@ void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* pl
         engine->procID = pid;
         return;
     } else {
-        // Child thread
-        // transfer_engine_main(engine);
+        // Start child thread running main engine
         (void)transfer_engine_main;
-
         transfer_engine_debug(engine);
             
         // This should never be reached - thread should be killed in main func
@@ -79,36 +100,67 @@ void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* pl
 }
 
 void destroy_transfer_engine(struct transfer_engine* engine) {
-    // Kill the child process
     int err;
+    
+    // Kill the child process
+    if (!childKilled && (err = kill(engine->procID, SIGSEGV))) {
+        stl_warn(errno, "Transfer engine could not kill child");
+    }
+
     if ((err = pthread_mutex_destroy(&engine->startMut))) {
-        warn("Failed to destroy transfer mutex");
+        stl_warn(err, "Failed to destroy transfer mutex");
     }
 
     if ((err = pthread_cond_destroy(&engine->startCond))) {
-        warn("Failed to destroy transfer condition");
+        stl_warn(err, "Failed to destroy transfer condition");
     }
-
 }
 
 int transfer_engine_start(struct transfer_engine* engine, struct audio_backend_start_info* info) {
     // Move info into the engine
-    memcpy(&engine->info, info, sizeof(struct audio_backend_start_info));
+    int res;
 
+    
+    memcpy(&engine->info, info, sizeof(struct audio_backend_start_info));
+    
     // Start the process
-    pthread_mutex_lock(&engine->startMut);
+    if ((res = pthread_mutex_lock(&engine->startMut))) {
+        stl_warn(res, "Could not lock transfer engine mutex");
+        return ST_FAIL;
+    }
+
     engine->started = true;
-    info("engine started");
-    pthread_cond_signal(&engine->startCond);
-    pthread_mutex_unlock(&engine->startMut);
+    info("Transfer engine started");
+
+    if ((res = pthread_cond_signal(&engine->startCond))) {
+        stl_warn(res, "Could not signal transfer engine condition");
+        return ST_FAIL;
+    }
+
+    if ((res = pthread_mutex_unlock(&engine->startMut))) {
+        stl_warn(res, "Could not unlock transfer engine mutex");
+        return ST_FAIL;
+    }
+
     return ST_GOOD;
 }
 
 int transfer_engine_stop(struct transfer_engine* engine) {
     // Stop the process
-    info("engine stopped");
+    int res;
+
+    if ((res = pthread_mutex_lock(&engine->startMut))) {
+        stl_warn(res, "Could not lock transfer engine mutex");
+        return ST_FAIL;
+    }
+
     engine->started = false;
-    info("stop");
+    info("Engine stopped");
+
+    if ((res = pthread_mutex_unlock(&engine->startMut))) {
+        stl_warn(res, "Could not unlock transfer engine mutex");
+        return ST_FAIL;
+    }
 
     return ST_GOOD;
 }
@@ -117,6 +169,7 @@ static void transfer_engine_main(struct transfer_engine* engine) {
     struct sockaddr_in recvAddr;
     struct sockaddr_in savedRecvAddr;
     struct sockaddr_in sendAddr;
+
     recvAddr.sin_family = AF_INET;
     sendAddr.sin_family = AF_INET;
 
@@ -141,17 +194,16 @@ static void transfer_engine_main(struct transfer_engine* engine) {
 
         // Check for valid socket id
         if (sockfd < 0) {
-            warn("Failed to initialise socket with code : %d", sockfd);
+            stl_warn(errno, "Failed to initialise socket with code : %d", sockfd);
             continue;
         }
 
         // Have to set non blocking manually on macos
-
 #ifndef linux
         // Read existing socket flags
         int flags;
         if ((flags = fcntl(sockfd, F_GETFL, 0)) < 0) {
-            warn("Transfer engine couldn't read flags from socket!");
+            stl_warn(errno, "Transfer engine couldn't read flags from socket!");
             goto transfer_engine_cleanup;
         }
 
@@ -159,19 +211,25 @@ static void transfer_engine_main(struct transfer_engine* engine) {
         flags |= O_NONBLOCK;
 
         if (fcntl(sockfd, F_SETFL, flags) < 0) {
-            warn("Transfer engine couldn't write flags to socket!");
+            stl_warn(errno, "Transfer engine couldn't write flags to socket!");
             goto transfer_engine_cleanup;
         }
 #endif
 
         recvAddr.sin_port = htons(engine->info.recvPort);
         sendAddr.sin_port = htons(engine->info.sendPort);
-        inet_pton(AF_INET, engine->info.recvAddr, &recvAddr.sin_addr);
-        inet_pton(AF_INET, engine->info.sendAddr, &sendAddr.sin_addr);
+        if ((inet_pton(AF_INET, engine->info.recvAddr, &recvAddr.sin_addr))) {
+            stl_error(errno, "Failed to convert receive address to number");
+        }
+
+        if ((inet_pton(AF_INET, engine->info.sendAddr, &sendAddr.sin_addr))) {
+            stl_error(errno, "Failed to convert send address to number");
+        }
+
 
         // Bind the receive socket
         if ((res = bind(sockfd, (struct sockaddr*)&recvAddr, sizeof(recvAddr)))) {
-            warn("Failed to bind socket to address in transfer engine");
+            stl_warn(errno, "Failed to bind socket to address in transfer engine");
             goto transfer_engine_cleanup;
         }
 
@@ -193,7 +251,7 @@ static void transfer_engine_main(struct transfer_engine* engine) {
             if (written == -1) {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
                     // Bad error 
-                    warn("Transfer engine recfrom failed with code %d", errno);
+                    stl_warn(errno, "Transfer engine recfrom failed");
                 }
                 // No data available in non blocking so just go again
                 goto transfer_engine_do_write;
@@ -219,7 +277,7 @@ transfer_engine_do_write:
             if (written == -1) {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
                     // Bad error 
-                    warn("Transfer engine sendto failed with code %d", errno);
+                    stl_warn(errno, "Transfer engine sendto failed");
                 }
                 continue;
             }
@@ -231,7 +289,9 @@ transfer_engine_do_write:
         }
 transfer_engine_cleanup:
         // Close the socket
-        close(sockfd);
+        if ((close(sockfd))) {
+            stl_warn(errno, "Failed to close socket");
+        }
     }
 }
 
@@ -259,7 +319,9 @@ static void transfer_engine_debug(struct transfer_engine* engine) {
     while (true) {
         // info("here");
         if (!engine->started) {
-            wait_for_start(engine);
+            if (wait_for_start(engine) != ST_GOOD) {
+                error("Transfer engine child process couldn't wait for engine start");
+            }
         }
 
         // 'Read' data from the capture ring buffer
@@ -280,8 +342,6 @@ static void transfer_engine_debug(struct transfer_engine* engine) {
                 warn("Failed to read pcm frames");
             }
 
-            info("Wrote %lu to playback", frameCount * FRAME_SIZE);
-
             if (ring_buffer_commit_write(engine->playback, frameCount * FRAME_SIZE) != ST_GOOD) {
                 warn("Failed to commit the ring buffer write");
             }
@@ -289,17 +349,33 @@ static void transfer_engine_debug(struct transfer_engine* engine) {
     }
 }
 
-static void wait_for_start(struct transfer_engine* engine) {
-    info("g");
-    pthread_mutex_lock(&engine->startMut);
-    info("started : %s", engine->started ? "t" : "f");
-    while (!engine->started) {
-        pthread_cond_wait(&engine->startCond, &engine->startMut);
-        info("awoken");
+static int wait_for_start(struct transfer_engine* engine) {
+    int res;
+
+    if ((res = pthread_mutex_lock(&engine->startMut))) {
+        stl_warn(res, "Child could not lock transfer engine mutex");
+        return ST_FAIL;
     }
-    pthread_mutex_unlock(&engine->startMut);
+
+    while (!engine->started) {
+        if ((res = pthread_cond_wait(&engine->startCond, &engine->startMut))) {
+            stl_warn(res, "Child could not wait on condition!");
+            return ST_FAIL;
+        }
+    }
+
+    if ((res = pthread_mutex_unlock(&engine->startMut))) {
+        stl_warn(res, "Child could not unlock transfer engine mutex");
+        return ST_FAIL;
+    }
+
+    return ST_GOOD;
 }
 
+
+/**
+ * This handler should only handle SIGCHLD.
+ */
 static void handle_child_signal(int sigid) {
-    warn("Child was killed :( ");
+    childKilled = true;
 }

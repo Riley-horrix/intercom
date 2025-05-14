@@ -1,0 +1,20 @@
+#ifndef SRC_LOGIC_BACKEND_SRC
+#define SRC_LOGIC_BACKEND_SRC
+
+#include "audiobackend/audio_backend.h"
+
+struct logic_backend {
+    struct audio_backend* audio;
+};
+
+struct server_secrets {
+    const char* server_hostname;
+    const char* server_port;
+};
+
+extern void init_logic_backend(struct logic_backend* logic, struct program_conf* config);
+extern void destroy_logic_backend(struct logic_backend* logic);
+
+extern int logic_backend_start(struct logic_backend* logic, struct server_secrets* secrets);
+
+#endif

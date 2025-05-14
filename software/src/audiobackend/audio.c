@@ -1,3 +1,4 @@
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,6 +7,7 @@
 #include "audiobackend/ring_buffer.h"
 #include "audiobackend/audio.h"
 
+static void init_biquad(ma_biquad* biquad);
 static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount);
 static int  select_device(ma_device_info* infos, ma_uint32 count, bool useDefaults);
 
@@ -26,6 +28,9 @@ void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback
     // Save ring buffers
     engine->playback = playback;
     engine->capture = capture;
+
+    // Initialise biquad filter
+    init_biquad(&engine->biquad);
 
     // Do device search & user selection
     if ((res = ma_context_init(NULL, 0, NULL, &engine->context)) != MA_SUCCESS) {
@@ -100,6 +105,38 @@ int audio_engine_stop(struct audio_engine* engine) {
     return ST_GOOD;
 }
 
+static void init_biquad(ma_biquad* biquad) {
+
+    #if FORMAT != ma_format_s16 && FORMAT != ma_format_f32
+        #error "Cannot initialise biquad filter with current format"
+    #endif
+
+    // Need to calculate coefficients for a band pass filter
+    // https://webaudio.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
+    // BPF (constant 0 dB peak gain)
+
+    const double samplingFrequency = SAMPLE_RATE;
+    const double centreFrequency = 1500;
+    const double Q = 0.707;
+
+    const double w0 = 2.0 * M_PI * centreFrequency / samplingFrequency;
+    const double a = sin(2.0 * w0) / (2.0 * Q);
+
+    const double a0 = 1.0 + a;
+    const double a1 = -2 * cos(w0);
+    const double a2 = 1.0 - a;
+    
+    const double b0 = a;
+    const double b1 = 0;
+    const double b2 = -a;
+
+    ma_result result;
+    ma_biquad_config config = ma_biquad_config_init(FORMAT, CHANNELS, b0, b1, b2, a0, a1, a2);
+    if ((result = ma_biquad_init(&config, NULL, biquad)) != MA_SUCCESS) {
+        ma_error("Failed to initialise biquad filter", result);
+    }
+}
+
 /**
  * Main miniaudio device data callback.
  * 
@@ -109,8 +146,8 @@ static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const voi
     // Extract engine from data
     struct audio_engine* engine = (struct audio_engine*) pDevice->pUserData;
     
+    const size_t expected = frameCount * FRAME_SIZE;
     size_t sizeBytes;
-    size_t expected = frameCount * FRAME_SIZE;
     void* buffer;
 
     if (pOutput != NULL) {
@@ -120,13 +157,11 @@ static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const voi
             goto write_playback;
         }
 
-        info("bytes to read : %zu", sizeBytes);
-
-        memcpy(pOutput, buffer, sizeBytes);
+        // Apply a band pass filter on the audio data
+        ma_biquad_process_pcm_frames(&engine->biquad, pOutput, buffer, frameCount);
 
         if (ring_buffer_commit_read(engine->playback, sizeBytes) != ST_GOOD) {
             warn("Failed to commit a read to the ring buffer");
-            goto write_playback;
         }
     }
 
