@@ -9,6 +9,8 @@ MINI_AUDIO_OPT_GCC   = -msse2 -mavx2
 
 CC_OPT = $(INCLUDES) $(MINI_AUDIO_OPT_GCC) -Wall -Werror
 
+LD_OPT = -lconfig
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 	CC_OPT += $(MINI_AUDIO_OPT_LINUX)
@@ -34,6 +36,8 @@ all: $(EXECUTABLES)
 $(BUILD_DIR):
 	mkdir -p $@/src/logicbackend
 	mkdir -p $@/src/audiobackend
+	mkdir -p $@/src/server
+	mkdir -p $@/src/intercom
 	mkdir -p $@/lib
 
 $(BUILD_DIR)/%.o: %.c
@@ -42,9 +46,9 @@ $(BUILD_DIR)/%.o: %.c
 # Build executables
 
 $(EXECUTABLES): $(BUILD_DIR) $(BUILD_TARGETS) 
-	gcc -o $(BUILD_DIR)/$@ $(BUILD_TARGETS) $@.c $(CC_OPT)
+	gcc -o $(BUILD_DIR)/$@ $(BUILD_TARGETS) $@.c $(CC_OPT) $(LD_OPT)
 	@if [ -n "$(filter $@, $(MAKECMDGOALS))" ]; then \
-	  ./$(BUILD_DIR)/$@ $(filter-out $@, $(MAKECMDGOALS)); \
+	  $(BUILD_DIR)/$@ $(filter-out $@, $(MAKECMDGOALS)); \
 	fi
 
 # Misc

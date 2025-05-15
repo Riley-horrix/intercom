@@ -48,8 +48,8 @@ void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback
     }
     
     // User selections for devices
-    ma_uint32 playbackDeviceSelection = select_device(pPlaybackInfos, playbackCount, conf->useDefaults);
-    ma_uint32 captureDeviceSelection  = select_device(pCaptureInfos, captureCount, conf->useDefaults);
+    ma_uint32 playbackDeviceSelection = select_device(pPlaybackInfos, playbackCount, conf->use_defaults);
+    ma_uint32 captureDeviceSelection  = select_device(pCaptureInfos, captureCount, conf->use_defaults);
 
     // Set the device configurations.
     ma_device_config config = ma_device_config_init(ma_device_type_duplex);

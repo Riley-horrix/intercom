@@ -6,19 +6,22 @@
 #include <netdb.h>
 #include <poll.h>
 
-#ifdef RASPBERRY_PI
+#ifdef linux
 #include <endian.h>
 #else
 #include <machine/endian.h>
 #endif
 
 #include <arpa/inet.h>
+
+#ifdef RASPBERRY_PI
 #include <wiringPi.h>
+#endif
 
 #include "args.h"
 #include "common.h"
 #include "audiobackend/audio_backend.h"
-#include "logicbackend/packets.h"
+#include "server/packets.h"
 #include "logicbackend/logic_backend.h"
 
 struct server_info {
@@ -238,7 +241,7 @@ logic_server_cleanup:
     return res;
 }
 
-static unsigned long ts_to_micros(struct timespec* ts) {
+static unsigned long __attribute((unused)) ts_to_micros(struct timespec* ts) {
     return ts->tv_sec / 1000 + ts->tv_nsec * 1000000;
 }
 
@@ -375,8 +378,8 @@ static int no_block_check_receive_call(const struct wait_for_call_state* state, 
 
 // Also needs a function for checking for server messages at, for example, 2Hz
 static int INTERCOM_RPI_FUNCTION wait_for_call_start_gpio(struct state_t** state) {
+#ifdef RASPBERRY_PI
     const struct wait_for_call_state* wait_for_call_state = (struct wait_for_call_state*)*state;
-
     info("Entered state wait for call start gpio");
 
     // Listen for changes on the gpio pin
@@ -459,6 +462,9 @@ static int INTERCOM_RPI_FUNCTION wait_for_call_start_gpio(struct state_t** state
         // Sleep so we dont thrash
         usleep(50);
     }
+#else
+    return ST_GOOD;
+#endif
 }
 
 static int INTERCOM_FUNCTION wait_for_call_start(struct state_t** state) {
