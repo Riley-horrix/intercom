@@ -55,6 +55,9 @@ $(EXECUTABLES): $(BUILD_DIR) $(BUILD_TARGETS)
 
 HEADER_FILES = $(shell find ./include -name "*.h")
 
+lines-code:
+	find . \( -name '*.c' -or -name '*.h' \) -and -not -path './lib/*' | xargs wc -l
+
 clean:
 	@rm -rf $(BUILD_DIR)
 
