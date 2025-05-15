@@ -1,18 +1,17 @@
 #ifndef SRC_ARGS_H
 #define SRC_ARGS_H
 
+#include <libconfig.h>
 #include <stdbool.h>
 
 struct program_conf {
-    const char* config_file;
-    bool use_defaults;
-    const char* server_hostname;
+    char config_file[128];
+    char server_hostname[128];
+    unsigned short phone_number;
     unsigned short server_port;
+    bool use_defaults;
 };
 
-extern void init_program_conf(struct program_conf* conf);
-extern void parse_args(struct program_conf* conf, int argc, char** argv);
-
-extern void read_config_file(struct program_conf* conf, const char* path);
+extern void init_program_conf(struct program_conf* config, int argc, char** argv);
 
 #endif

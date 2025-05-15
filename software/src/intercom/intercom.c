@@ -7,17 +7,8 @@
 
 int intercom_run(int argc, char** argv) {
     struct program_conf config;
-    init_program_conf(&config);
-    
-    if (argc > 1) {
-        info("Reading %d program arguments", argc);
-        parse_args(&config, argc, argv);
-    }
-
-    if (config.config_file != NULL) {
-        info("Reading from config file %s", config.config_file);
-        read_config_file(&config, config.config_file);
-    }
+    info("Initialising program configuration");
+    init_program_conf(&config, argc, argv);
 
     info("Initialising audio backend");
     struct audio_backend* audio = create_shared_memory(sizeof(*audio));
