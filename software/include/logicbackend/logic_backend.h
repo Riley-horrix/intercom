@@ -19,7 +19,6 @@ struct logic_backend {
 struct server_secrets {
     const char* server_hostname;
     const char* server_port;
-    const char* udp_port;
 };
 
 extern void init_logic_backend(struct logic_backend* logic, struct program_conf* config);

@@ -11,7 +11,12 @@ int main(int argc, char** argv) {
     secrets.server_hostname = argv[1];
     secrets.server_port = argv[2];
 
-    logic_backend_start(NULL, &secrets);
+    struct logic_backend logic;
+    struct program_conf conf;
+    conf.useDefaults = true;
 
+    init_logic_backend(&logic, &conf);
+    logic_backend_start(&logic, &secrets);
+    destroy_logic_backend(&logic);
     return 0;
 }

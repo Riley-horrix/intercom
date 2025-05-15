@@ -14,11 +14,17 @@ enum MSG_ID {
     CALL_RESPONSE       = 4,
     INCOMING_CALL       = 5,
     INCOMING_RESPONSE   = 6,
+    TERMINATE_CALL      = 7
 };
 
 enum CALL_ENUM {
     CALL_REJECTED = 0,
     CALL_ACCEPTED = 1,
+};
+
+enum TERMINATE_CODE {
+    CALL_PUTDOWN = 1,
+    SERVER_ERROR = 2,
 };
 
 /**
@@ -74,6 +80,11 @@ struct incoming_call {
 struct incoming_response {
     uint8_t id;
     uint8_t accepted; // enum CALL_ENUM
-};
+} PACKED_STRUCT;
+
+struct terminate_call {
+    uint8_t id;
+    uint8_t err_code;
+} PACKED_STRUCT;
 
 #endif
