@@ -3,10 +3,17 @@
 
 #include "audiobackend/audio_backend.h"
 
+struct hardware_config {
+    int dial_gpio_pin;
+    int dial_normal_state;
+    int ringer_pwm_pin;
+};
+
 struct logic_backend {
     struct audio_backend* audio;
     struct sockaddr_in serverAddr;
     struct sockaddr_in udpServerAddr;
+    struct hardware_config hardware;
 };
 
 struct server_secrets {

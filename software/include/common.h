@@ -5,6 +5,14 @@
 #include <errno.h>
 #include <signal.h>
 
+#ifdef RASPBERRY_PI
+#define INTERCOM_RPI_FUNCTION
+#define INTERCOM_FUNCTION __attribute((unused))
+#else
+#define INTERCOM_RPI_FUNCTION __attribute((unused))
+#define INTERCOM_FUNCTION
+#endif
+
 #define error(fmt, ...) (fprintf(stderr, "\e[31m[ERROR]\e[0m " fmt "!\n" , ##__VA_ARGS__), raise(SIGTERM))
 #define warn(fmt, ...) fprintf(stdout, "\e[93m[WARN]\e[0m " fmt "!\n" , ##__VA_ARGS__)
 #define info(fmt, ...) fprintf(stdout, "\e[32m[info]\e[0m " fmt ".\n" , ##__VA_ARGS__)

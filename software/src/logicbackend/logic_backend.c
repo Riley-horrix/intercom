@@ -1,8 +1,17 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <poll.h>
+
+#ifdef RASPBERRY_PI
+#include <endian.h>
+#else
+#include <machine/endian.h>
+#endif
+
 #include <arpa/inet.h>
 #include <wiringPi.h>
 
@@ -22,6 +31,7 @@ struct state_t {
 
 struct server_state {
     struct state_t state;
+    struct logic_backend* logic;
     int sockfd;
 };
 
@@ -32,15 +42,28 @@ struct handshake_state {
 
 struct wait_for_call_state {
     struct server_state server;
-    struct state_t* begin_call;
-    int gpio_dial_pin;
+    struct state_t* make_call;
+    struct state_t* accept_call;
     int* phone_number;
+    uint16_t* server_udp_port;
+    int gpio_dial_pin;
+};
+
+struct execute_external_call_state {
+    struct server_state server;
+    struct state_t* call;
+    uint16_t* server_udp_port;
+    int phone_number;
+};
+
+struct execute_ring_state {
+    struct server_state server;
+    struct state_t* call;
 };
 
 struct execute_call_state {
     struct server_state server;
-    struct state_t* begin_call;
-    int phone_number;
+    uint16_t server_udp_port;
 };
 
 static int start_server(struct logic_backend* logic);
@@ -51,8 +74,11 @@ static unsigned long ts_to_micros(struct timespec* ts);
 
 // Server state functions
 static int handshake_start(struct state_t** state);
-static int wait_for_call_start_gpio(struct state_t** state);
+static int wait_for_call_start_gpio(struct state_t** state, bool* received);
 static int wait_for_call_start(struct state_t** state);
+
+// Server state helpers
+static int no_block_check_receive_call(const struct wait_for_call_state* state, bool* received);
 
 void init_logic_backend(struct logic_backend* logic, struct program_conf* config) {
     info("Initialising audio backend");
@@ -102,6 +128,8 @@ int logic_backend_start(struct logic_backend* logic, struct server_secrets* secr
         warn("Failed to resolve hostname %s, port %s", secrets->server_hostname, secrets->server_port);
     }
 
+    start_server(logic);
+
     return ST_GOOD;
 }
 
@@ -124,34 +152,54 @@ static int start_server(struct logic_backend* logic) {
     // Connect the receive socket
     if ((res = connect(sockfd, (struct sockaddr*)&logic->serverAddr, sizeof(logic->serverAddr)))) {
         stl_warn(errno, "Failed to connect to server");
+        res = ST_FAIL;
         goto logic_server_cleanup;
     }
 
-    // Commence handshake with the server
+    // Initialise states
+    struct server_state server;
+    server.logic = logic;
+    server.sockfd = sockfd;
+
     struct handshake_state handshake;
+    handshake.server = server;
+    handshake.server.state.start = &handshake_start;
 
-    // Wait for the hardware device to commence a call
     struct wait_for_call_state waitForCall;
-
-#ifdef RASPBERRY_PI
-    handshake.wait_for_call = wait_for_call_start_gpio;
+    waitForCall.server = server;
+    #ifdef RASPBERRY_PI
+    waitForCall.server.state.start = &wait_for_call_start_gpio;
 #else
-    handshake.wait_for_call = wait_for_call_start;
+    waitForCall.server.state.start = &wait_for_call_start;
 #endif
+    waitForCall.gpio_dial_pin = logic->hardware.dial_gpio_pin;
 
-    // Execute the call
-    // struct begin_call beginCall;
+    struct execute_external_call_state externalCall;
+    struct execute_ring_state ringBell;
+    
+    struct execute_call_state executeCall;
 
-    struct state_t* currentState = &handshake;
+    // Link together states
+    handshake.wait_for_call = (struct state_t*)&waitForCall;
+
+    waitForCall.make_call = (struct state_t*)&externalCall;
+    waitForCall.accept_call = (struct state_t*)&ringBell;
+
+    externalCall.call = (struct state_t*)&executeCall;
+
+    ringBell.call = (struct state_t*)&executeCall;
+
+    struct state_t* currentState = (struct state_t*)&handshake;
 
     res = ST_GOOD;
 
     while (res == ST_GOOD) {
-        currentState->start(&currentState);
+        res = currentState->start(&currentState);
     }
 
 logic_server_cleanup:
     close(sockfd);
+    return res;
 }
 
 static unsigned long ts_to_micros(struct timespec* ts) {
@@ -221,6 +269,7 @@ static int handshake_start(struct state_t** state) {
 
     // Send handshake message
     struct handshake_request req;
+    req.id = HANDSHAKE_REQUEST;
 
     strcpy(req.magic, HANDSHAKE_MAGIC);
     res = send(handshake_state->server.sockfd, (void*)&req, sizeof(req), 0);
@@ -240,18 +289,56 @@ static int handshake_start(struct state_t** state) {
         return ST_FAIL;
     }
 
+    if (resp.id != HANDSHAKE_RESPONSE) {
+        warn("Handshake response id invalid");
+        return ST_FAIL;
+    }
+
     // Validate response
     if (strncmp(HANDSHAKE_MAGIC, resp.magic, sizeof(resp.magic)) != 0) {
-        warn("Handshake request magic invalid");
+        warn("Handshake response magic invalid");
         return ST_FAIL;
     }
 
     // All good so move to next state
     *state = handshake_state->wait_for_call;
+    return ST_GOOD;
+}
+
+static int no_block_check_receive_call(const struct wait_for_call_state* state, bool* received) {
+    // Get received data
+    struct incoming_call call;
+
+    // Non-blocking read on the socket
+    int res = recv(state->server.sockfd, &call, sizeof(call), MSG_DONTWAIT);
+
+    if (res == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
+        // Socket error
+        stl_warn(errno, "Socket error reading incoming call");
+        return ST_FAIL;
+    }
+
+    if (res == -1 || res != sizeof(call)) {
+        // No valid data
+        return ST_GOOD;
+    } else {
+        if (ntohs(call.id) != INCOMING_CALL) {
+            // Invalid packet but we dont care
+            return ST_GOOD;
+        }
+
+        *state->phone_number = ntohs(call.from_phone_number);
+        *state->server_udp_port = ntohs(call.udp_server_port);
+
+        info("Received call from %d", *state->phone_number);
+        *received = true;
+
+        return ST_GOOD;
+    }
 }
 
 // Also needs a function for checking for server messages at, for example, 2Hz
-static int wait_for_call_start_gpio(struct state_t** state) {
+static int INTERCOM_RPI_FUNCTION wait_for_call_start_gpio(struct state_t** state, bool* received) {
     const struct wait_for_call_state* wait_for_call_state = (struct wait_for_call_state*)*state;
 
     info("Entered state wait for call start gpio");
@@ -274,12 +361,12 @@ static int wait_for_call_start_gpio(struct state_t** state) {
         }
     }
 
+    // TODO For now this only allows single digit dialing.
     // 1ms
     const long debounceUs = 1000;
     // 1s
     const long callCommitUs = 1000000;
 
-    unsigned long currentUs;
     unsigned long lastChangeUs;
 
     struct timespec ts;
@@ -316,16 +403,74 @@ static int wait_for_call_start_gpio(struct state_t** state) {
         }
 
         if (debouncedState == LOW && currentUs - lastChangeUs > callCommitUs) {
-            // Send the call
-            *state = wait_for_call_state->begin_call;
-            return;
+            // Transition to make call state
+            *wait_for_call_state->phone_number = pulses - 1;
+            *state = wait_for_call_state->make_call;
+
+            info("Calling number %d", *wait_for_call_state->phone_number);
+            return ST_GOOD;
         }
 
-        // Sleep so we dont thrash the gpio
-        usleep(100);
+        // Check for incoming calls
+        bool received_call;
+        no_block_check_receive_call(wait_for_call_state, &received_call);
+        
+        if (received_call) {
+            // Transition to accept call state
+            *state = wait_for_call_state->accept_call;
+            return ST_GOOD;
+        }
+        
+        // Sleep so we dont thrash
+        usleep(50);
     }
 }
 
+static int INTERCOM_FUNCTION wait_for_call_start(struct state_t** state) {
+    struct wait_for_call_state* wait_for_call_state = (struct wait_for_call_state*)state;
+
+    info("Entered state wait for call start");
+
+    int res;
+
+    // Nonblocking read of stdin
+    struct pollfd stdinPoll;
+    stdinPoll.fd = STDIN_FILENO;
+    stdinPoll.events = POLLIN;
+
+    res = poll(&stdinPoll, 1, 0);
+
+    if (res != 1) {
+        stl_warn(errno, "Error when polling stdin");
+    } else {
+        if (stdinPoll.revents & POLLIN) {
+            char stdinBuf[16] = { 0 };
+            res = read(STDIN_FILENO, stdinBuf, sizeof(stdinBuf));
+            char* endPtr;
+
+            int phone_number = (int)strtoul(stdinBuf, &endPtr, 10);
+
+            if (endPtr != stdinBuf) {
+                info("Calling number %d", phone_number);
+
+                *wait_for_call_state->phone_number = phone_number;
+                *state = wait_for_call_state->make_call;
+            }
+        }
+    }
+
+    // Check for incoming calls
+    bool received_call;
+    no_block_check_receive_call(wait_for_call_state, &received_call);
+    
+    if (received_call) {
+        // Transition to accept call state
+        *state = wait_for_call_state->accept_call;
+        return ST_GOOD;
+    }
+
+    return ST_GOOD;
+}
 
 // Secure communication design
 
