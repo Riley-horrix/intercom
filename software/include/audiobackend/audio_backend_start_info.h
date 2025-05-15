@@ -4,8 +4,8 @@
 #define IPV4_MAX_STRLEN 16
 
 struct audio_backend_start_info {
-    unsigned short sendPort;
-    unsigned short recvPort;
+    unsigned short sendPort; // In network format
+    unsigned short recvPort; // In network format
     char sendAddr[IPV4_MAX_STRLEN];
     char recvAddr[IPV4_MAX_STRLEN];
 };

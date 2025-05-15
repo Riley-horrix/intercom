@@ -132,6 +132,7 @@ static void init_biquad(ma_biquad* biquad) {
 
     ma_result result;
     ma_biquad_config config = ma_biquad_config_init(FORMAT, CHANNELS, b0, b1, b2, a0, a1, a2);
+    
     if ((result = ma_biquad_init(&config, NULL, biquad)) != MA_SUCCESS) {
         ma_error("Failed to initialise biquad filter", result);
     }
@@ -146,11 +147,13 @@ static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const voi
     // Extract engine from data
     struct audio_engine* engine = (struct audio_engine*) pDevice->pUserData;
     
+    ma_result res;
     const size_t expected = frameCount * FRAME_SIZE;
     size_t sizeBytes;
     void* buffer;
 
     if (pOutput != NULL) {
+        // Read audio data from ring buffer
         sizeBytes = expected;
         if (ring_buffer_acquire_read(engine->playback, &sizeBytes, &buffer) != ST_GOOD) {
             warn("Failed to acquire a read pointer to the ring buffer");
@@ -158,7 +161,10 @@ static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const voi
         }
 
         // Apply a band pass filter on the audio data
-        ma_biquad_process_pcm_frames(&engine->biquad, pOutput, buffer, frameCount);
+        if ((res = ma_biquad_process_pcm_frames(&engine->biquad, pOutput, buffer, frameCount)) != MA_SUCCESS) {
+            ma_warn("Audio engine failed to apply filter", res);
+            memcpy(pOutput, buffer, frameCount);
+        }
 
         if (ring_buffer_commit_read(engine->playback, sizeBytes) != ST_GOOD) {
             warn("Failed to commit a read to the ring buffer");

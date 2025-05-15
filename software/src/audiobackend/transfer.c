@@ -173,7 +173,6 @@ static void transfer_engine_main(struct transfer_engine* engine) {
     recvAddr.sin_family = AF_INET;
     sendAddr.sin_family = AF_INET;
 
-    int sockfd;
     int res;
 
     while (true) {
@@ -183,7 +182,7 @@ static void transfer_engine_main(struct transfer_engine* engine) {
 
         // Socket information in engine->info now valid
         // Initialise sockets
-        sockfd = socket(
+        int sockfd = socket(
             AF_INET, 
 #ifdef linux
             SOCK_DGRAM | SOCK_NONBLOCK, 
@@ -216,8 +215,8 @@ static void transfer_engine_main(struct transfer_engine* engine) {
         }
 #endif
 
-        recvAddr.sin_port = htons(engine->info.recvPort);
-        sendAddr.sin_port = htons(engine->info.sendPort);
+        recvAddr.sin_port = engine->info.recvPort;
+        sendAddr.sin_port = engine->info.sendPort;
         if ((inet_pton(AF_INET, engine->info.recvAddr, &recvAddr.sin_addr))) {
             stl_error(errno, "Failed to convert receive address to number");
         }
@@ -228,8 +227,8 @@ static void transfer_engine_main(struct transfer_engine* engine) {
 
 
         // Bind the receive socket
-        if ((res = bind(sockfd, (struct sockaddr*)&recvAddr, sizeof(recvAddr)))) {
-            stl_warn(errno, "Failed to bind socket to address in transfer engine");
+        if ((res = connect(sockfd, (struct sockaddr*)&recvAddr, sizeof(recvAddr)))) {
+            stl_warn(errno, "Failed to connect socket to address in transfer engine");
             goto transfer_engine_cleanup;
         }
 
