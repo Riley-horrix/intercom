@@ -12,7 +12,14 @@
 static int config_get_u16(struct config_t* conf, const char* path, unsigned short* ret);
 static int config_get_str(struct config_t* conf, const char* path, char* ret, ssize_t maxlen);
 
-#define USAGE_STR "Usage: %s [-d] [-f <config-file>]"
+#define USAGE_STR "Usage: %s [options] [-f <config-file>]"
+
+#define HELP_STR USAGE_STR "\n\n"\
+    "[options]:\n"\
+    "-f file    Specify the configuration file\n"\
+    "-d         Use system default audio settings\n"\
+    "-h         Print this message\n"\
+    "\n"
 
 void init_program_conf(struct program_conf* config, int argc, char** argv) {
     memset(&config->config_file, 0, sizeof(config->config_file));
@@ -29,13 +36,21 @@ void init_program_conf(struct program_conf* config, int argc, char** argv) {
     }
 
     bool validConfigFile = false;
+    bool printHelp = false;
 
-    while ((opt = getopt(argc, argv, "df:")) != -1) {
+    while ((opt = getopt(argc, argv, "hdf:")) != -1) {
         switch (opt) {
         case 'd': config->use_defaults = true; break;
         case 'f': strncpy(config->config_file, optarg, sizeof(config->config_file)); validConfigFile = true; break;
+        case 'h': printHelp = true; break;
         default: error(USAGE_STR, argv[0]);
         }
+    }
+
+    if (printHelp) {
+        // info("As");
+        printf("\n"HELP_STR, argv[0]);
+        exit(0);
     }
 
     if (!validConfigFile) {
