@@ -9,19 +9,23 @@
 #include "audiobackend/transfer.h"
 #include "audiobackend/ring_buffer.h"
 
-struct audio_backend {
-    struct audio_engine audio_engine;
+typedef struct audio_backend_impl {
+    audio_engine_t audio_engine;
     struct transfer_engine transfer_engine;
-    struct ring_buffer captureRB;
-    struct ring_buffer playbackRB;
+    ring_buffer_t captureRB;
+    ring_buffer_t playbackRB;
+} audio_backend_impl_t;
+
+typedef struct audio_backend {
+    audio_backend_impl_t* impl;
     bool initialised;
     bool started;
-};
+} audio_backend_t;
 
-extern void init_audio_backend(struct audio_backend* backend, struct program_conf* config);
-extern void destroy_audio_backend(struct audio_backend* backend);
+extern void init_audio_backend(audio_backend_t* backend, intercom_conf_t* config);
+extern void destroy_audio_backend(audio_backend_t* backend);
 
-extern int  audio_backend_start(struct audio_backend* backend, struct audio_backend_start_info* info);
-extern int  audio_backend_stop(struct audio_backend* backend);
+extern int  audio_backend_start(audio_backend_t* backend, audio_backend_start_info_t* info);
+extern int  audio_backend_stop(audio_backend_t* backend);
 
 #endif

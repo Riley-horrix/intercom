@@ -100,22 +100,15 @@ static int execute_call(struct state_t** state);
 // Server state helpers
 static int no_block_check_receive_call(const struct wait_for_call_state* state, bool* received);
 
-void init_logic_backend(struct logic_backend* logic, struct program_conf* config) {
+void init_logic_backend(struct logic_backend* logic, intercom_conf_t* config) {
     info("Initialising audio backend");
-    logic->audio = (struct audio_backend*) create_shared_memory(sizeof(struct audio_backend));
-
-    // TODO : Probably move this into the audio_backend
-    if (!logic->audio) {
-        error("Failed to allocate shared memory");
-    }
-
     init_audio_backend(logic->audio, config);
 }
 
 void destroy_logic_backend(struct logic_backend* logic) {
     info("Destroying audio backend");
     destroy_audio_backend(logic->audio);
-    destroy_shared_memory(logic->audio, sizeof(struct audio_backend));
+    destroy_shared_memory(logic->audio, sizeof(audio_backend_t));
 }
 
 /**
@@ -610,7 +603,7 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
     struct execute_call_state* call_state = (struct execute_call_state*)*state;
 
     // Just start the audio backend
-    struct audio_backend_start_info info;
+    audio_backend_start_info_t info;
     info.sendPort = call_state->server_udp_port;
     inet_ntop(AF_INET, &call_state->server.logic->serverAddr.sin_addr, info.sendAddr, sizeof(call_state->server.logic->serverAddr.sin_addr));
 
@@ -686,7 +679,7 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
                 call_state->prompt_user = true;
             }
         }
-}
+    }
 }
 
 // Secure communication design

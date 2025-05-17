@@ -49,19 +49,18 @@
  * it to the audio device.
  */
 
-struct audio_engine {
+typedef struct audio_engine {
     ma_context context;
     ma_device device;
     ma_biquad biquad;
-    struct ring_buffer* playback;
-    struct ring_buffer* capture;
-};
+    ring_buffer_t* playback;
+    ring_buffer_t* capture;
+} audio_engine_t;
 
+extern void init_audio_engine(audio_engine_t* engine, ring_buffer_t* playback, ring_buffer_t* capture, intercom_conf_t* conf);
+extern void destroy_audio_engine(audio_engine_t* engine);
 
-extern void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* conf);
-extern void destroy_audio_engine(struct audio_engine* engine);
-
-extern int audio_engine_start(struct audio_engine* engine);
-extern int audio_engine_stop(struct audio_engine* engine);
+extern int audio_engine_start(audio_engine_t* engine);
+extern int audio_engine_stop(audio_engine_t* engine);
 
 #endif

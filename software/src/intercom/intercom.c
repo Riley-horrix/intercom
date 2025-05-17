@@ -6,12 +6,12 @@
 #include "intercom/intercom.h"
 
 int intercom_run(int argc, char** argv) {
-    struct program_conf config;
+    intercom_conf_t config;
     info("Initialising program configuration");
-    init_program_conf(&config, argc, argv);
+    init_intercom_conf(&config, argc, argv);
 
     info("Initialising audio backend");
-    struct audio_backend* audio = create_shared_memory(sizeof(*audio));
+    audio_backend_t* audio = create_shared_memory(sizeof(*audio));
     init_audio_backend(audio, &config);
 
     struct logic_backend logic;

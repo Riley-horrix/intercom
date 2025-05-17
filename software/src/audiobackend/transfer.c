@@ -20,7 +20,7 @@ static void transfer_engine_debug(struct transfer_engine* engine);
 
 bool childKilled = false;
 
-void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* config) {
+void init_transfer_engine(struct transfer_engine* engine, ring_buffer_t* playback, ring_buffer_t* capture, intercom_conf_t* config) {
     if (capture == NULL || playback == NULL) {
         error("Ring buffers point to NULL in transfer engine");
     }
@@ -116,12 +116,12 @@ void destroy_transfer_engine(struct transfer_engine* engine) {
     }
 }
 
-int transfer_engine_start(struct transfer_engine* engine, struct audio_backend_start_info* info) {
+int transfer_engine_start(struct transfer_engine* engine, audio_backend_start_info_t* info) {
     // Move info into the engine
     int res;
 
     
-    memcpy(&engine->info, info, sizeof(struct audio_backend_start_info));
+    memcpy(&engine->info, info, sizeof(audio_backend_start_info_t));
     
     // Start the process
     if ((res = pthread_mutex_lock(&engine->startMut))) {

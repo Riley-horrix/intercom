@@ -18,7 +18,7 @@ static int  select_device(ma_device_info* infos, ma_uint32 count, bool useDefaul
  * 
  * Will fail if an error happens.
  */
-void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* conf) {
+void init_audio_engine(audio_engine_t* engine, ring_buffer_t* playback, ring_buffer_t* capture, intercom_conf_t* conf) {
     if (playback == NULL || capture == NULL) {
         error("Ring buffers point to NULL in audio engine");
     }
@@ -48,8 +48,8 @@ void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback
     }
     
     // User selections for devices
-    ma_uint32 playbackDeviceSelection = select_device(pPlaybackInfos, playbackCount, conf->use_defaults);
-    ma_uint32 captureDeviceSelection  = select_device(pCaptureInfos, captureCount, conf->use_defaults);
+    ma_uint32 playbackDeviceSelection = select_device(pPlaybackInfos, playbackCount, conf->use_audio_defaults);
+    ma_uint32 captureDeviceSelection  = select_device(pCaptureInfos, captureCount, conf->use_audio_defaults);
 
     // Set the device configurations.
     ma_device_config config = ma_device_config_init(ma_device_type_duplex);
@@ -78,12 +78,14 @@ void init_audio_engine(struct audio_engine* engine, struct ring_buffer* playback
  * 
  * This function does not destroy the ring buffers.
  */
-void destroy_audio_engine(struct audio_engine* engine) {
+void destroy_audio_engine(audio_engine_t* engine) {
     ma_device_uninit(&engine->device);
     ma_context_uninit(&engine->context);
+
+    destroy_shared_memory(engine, sizeof(*engine));
 }
 
-int audio_engine_start(struct audio_engine* engine) {
+int audio_engine_start(audio_engine_t* engine) {
     ma_result res;
 
     if ((res = ma_device_start(&engine->device)) != MA_SUCCESS) {
@@ -94,7 +96,7 @@ int audio_engine_start(struct audio_engine* engine) {
     return ST_GOOD;
 }
 
-int audio_engine_stop(struct audio_engine* engine) {
+int audio_engine_stop(audio_engine_t* engine) {
     ma_result res;
 
     if ((res = ma_device_stop(&engine->device)) != MA_SUCCESS) {
@@ -145,7 +147,7 @@ static void init_biquad(ma_biquad* biquad) {
  */
 static void miniaudio_data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
     // Extract engine from data
-    struct audio_engine* engine = (struct audio_engine*) pDevice->pUserData;
+    audio_engine_t* engine = (audio_engine_t*)pDevice->pUserData;
     
     ma_result res;
     const size_t expected = frameCount * FRAME_SIZE;

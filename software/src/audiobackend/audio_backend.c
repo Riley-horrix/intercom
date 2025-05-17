@@ -5,10 +5,17 @@
 #include "audiobackend/transfer.h"
 #include "audiobackend/ring_buffer.h"
 
-void init_audio_backend(struct audio_backend* backend, struct program_conf* config) {
-    if (backend->initialised) {
+void init_audio_backend(audio_backend_t* backend_p, intercom_conf_t* config) {
+    if (backend_p->initialised) {
         return;
     }
+
+    backend_p->impl = (audio_backend_impl_t*)create_shared_memory(sizeof(*backend_p->impl));
+    if (backend_p->impl == NULL) {
+        error("Failed to create shared memory for audio backend");
+    }
+
+    audio_backend_impl_t* backend = backend_p->impl;
 
     info("Initialising ring buffers");
     init_ring_buffer_shr(&backend->captureRB);
@@ -20,35 +27,39 @@ void init_audio_backend(struct audio_backend* backend, struct program_conf* conf
     info("Initialising transfer engine");
     init_transfer_engine(&backend->transfer_engine, &backend->playbackRB, &backend->captureRB, config);
 
-    backend->initialised = true;
+    backend_p->initialised = true;
 }
 
-void destroy_audio_backend(struct audio_backend* backend) {
+void destroy_audio_backend(audio_backend_t* backend) {
     if (!backend->initialised) {
         return;
     }
 
     info("Destroying transfer engine");
-    destroy_transfer_engine(&backend->transfer_engine);
+    destroy_transfer_engine(&backend->impl->transfer_engine);
 
     info("Destroying audio engine");
-    destroy_audio_engine(&backend->audio_engine);
+    destroy_audio_engine(&backend->impl->audio_engine);
     
     info("Destroying ring buffers");
-    destroy_ring_buffer(&backend->captureRB);
-    destroy_ring_buffer(&backend->playbackRB);
+    destroy_ring_buffer(&backend->impl->captureRB);
+    destroy_ring_buffer(&backend->impl->playbackRB);
+
+    destroy_shared_memory(backend->impl, sizeof(*backend->impl));
 
     backend->initialised = false;
 }
 
-int audio_backend_start(struct audio_backend* backend, struct audio_backend_start_info* info) {
+int audio_backend_start(audio_backend_t* backend_p, audio_backend_start_info_t* info) {
     int res;
 
-    if (!backend->initialised) {
+    audio_backend_impl_t* backend = backend_p->impl;
+
+    if (!backend_p->initialised) {
         return ST_NOT_INITIALISED;
     }
 
-    if (backend->started) {
+    if (backend_p->started) {
         return ST_GOOD;
     }
 
@@ -62,19 +73,20 @@ int audio_backend_start(struct audio_backend* backend, struct audio_backend_star
         return res;
     }
 
-    backend->started = true;
+    backend_p->started = true;
 
     return ST_GOOD;
 }
 
-int audio_backend_stop(struct audio_backend* backend) {
+int audio_backend_stop(audio_backend_t* backend_p) {
+    audio_backend_impl_t* backend = backend_p->impl;
     int res;
 
-    if (!backend->initialised) {
+    if (!backend_p->initialised) {
         return ST_NOT_INITIALISED;
     }
 
-    if (!backend->started) {
+    if (!backend_p->started) {
         return ST_GOOD;
     }
 
@@ -89,7 +101,7 @@ int audio_backend_stop(struct audio_backend* backend) {
         return res;
     }
 
-    backend->started = false;
+    backend_p->started = false;
 
     return ST_GOOD;
 }

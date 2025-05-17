@@ -18,20 +18,20 @@
  * using shared memory.
  */
 struct transfer_engine {
-    struct ring_buffer* playback;
-    struct ring_buffer* capture;
-    struct audio_backend_start_info info;
+    ring_buffer_t* playback;
+    ring_buffer_t* capture;
+    audio_backend_start_info_t info;
     pthread_cond_t startCond;
     pthread_mutex_t startMut; // Owned by child proc
     pid_t procID;
     bool started;
 };
 
-extern void init_transfer_engine(struct transfer_engine* engine, struct ring_buffer* playback, struct ring_buffer* capture, struct program_conf* config);
+extern void init_transfer_engine(struct transfer_engine* engine, ring_buffer_t* playback, ring_buffer_t* capture, intercom_conf_t* config);
 extern void destroy_transfer_engine(struct transfer_engine* engine);
 
 
-extern int transfer_engine_start(struct transfer_engine* engine, struct audio_backend_start_info* info);
+extern int transfer_engine_start(struct transfer_engine* engine, audio_backend_start_info_t* info);
 extern int transfer_engine_stop(struct transfer_engine* engine);
 
 

@@ -3,12 +3,16 @@
 #include "audiobackend/audio.h"
 #include "audiobackend/ring_buffer.h"
 
+// Defines for the miniaudio ring buffer
+#define RING_BUFFER_SIZE_IN_SECONDS 2
+#define BUFFER_SIZE_IN_FRAMES (SAMPLE_RATE * RING_BUFFER_SIZE_IN_SECONDS)
+
 /**
  * Initialise given ring buffer.
  * 
  * Fails if error occurs.
  */
-void init_ring_buffer(struct ring_buffer* rb) {
+void init_ring_buffer(ring_buffer_t* rb) {
     ma_result res;
 
     if (rb->initialised) {
@@ -33,7 +37,7 @@ void init_ring_buffer(struct ring_buffer* rb) {
  * 
  * Fails if error occurs.
  */
-void init_ring_buffer_shr(struct ring_buffer* rb) {
+void init_ring_buffer_shr(ring_buffer_t* rb) {
     ma_result res;
 
     if (rb->initialised) {
@@ -55,7 +59,7 @@ void init_ring_buffer_shr(struct ring_buffer* rb) {
 /**
  * Uninitialise the given ring buffer.
  */
-void destroy_ring_buffer(struct ring_buffer* rb) {
+void destroy_ring_buffer(ring_buffer_t* rb) {
     if (!rb->initialised) {
         return;
     }
@@ -76,30 +80,30 @@ void destroy_ring_buffer(struct ring_buffer* rb) {
  * space to read in `size`. The number written to `size` will be less than or
  * equal to the original value.
  */
-int ring_buffer_acquire_read(struct ring_buffer* rb, size_t* size, void** buffer) {
+int ring_buffer_acquire_read(ring_buffer_t* rb, size_t* size, void** buffer) {
     return ma_call(ma_rb_acquire_read(&rb->impl, size, buffer));
 }
 
-int ring_buffer_commit_read(struct ring_buffer* rb, size_t size){
+int ring_buffer_commit_read(ring_buffer_t* rb, size_t size){
     return ma_call(ma_rb_commit_read(&rb->impl, size));
 }
 
-int ring_buffer_acquire_write(struct ring_buffer* rb, size_t* size, void** buffer) {
+int ring_buffer_acquire_write(ring_buffer_t* rb, size_t* size, void** buffer) {
     return ma_call(ma_rb_acquire_write(&rb->impl, size, buffer));
 }
 
-int ring_buffer_commit_write(struct ring_buffer* rb, size_t size) {
+int ring_buffer_commit_write(ring_buffer_t* rb, size_t size) {
     return ma_call(ma_rb_commit_write(&rb->impl, size));
 }
 
-int ring_buffer_seek_read(struct ring_buffer* rb, size_t offset) {
+int ring_buffer_seek_read(ring_buffer_t* rb, size_t offset) {
     return ma_call(ma_rb_seek_read(&rb->impl, offset));
 }
 
-int ring_buffer_seek_write(struct ring_buffer* rb, size_t offset) {
+int ring_buffer_seek_write(ring_buffer_t* rb, size_t offset) {
     return ma_call(ma_rb_seek_write(&rb->impl, offset));
 }
 
-int32_t ring_buffer_pointer_distance(struct ring_buffer* rb) {
+int32_t ring_buffer_pointer_distance(ring_buffer_t* rb) {
     return ma_rb_pointer_distance(&rb->impl);
 }

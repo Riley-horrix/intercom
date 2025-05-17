@@ -10,31 +10,27 @@
 #include "audiobackend/audio.h"
 #include "audiobackend/audio_backend.h"
 
-struct audio_backend* engine;
+audio_backend_t engine;
 
 void terminate(int num) {
-    (void)num;
-    destroy_audio_backend(engine);
-    destroy_shared_memory(engine, sizeof(*engine));
+    destroy_audio_backend(&engine);
     exit(num);
 }
 
 int main(int argc, char** argv) {
     // Parse arguments
-    struct program_conf conf;
-    parse_args(&conf, argc, argv);
-
-    engine = (struct audio_backend*)create_shared_memory(sizeof(*engine));
+    intercom_conf_t conf;
+    init_intercom_conf(&conf, argc, argv);
 
     info("Initialising audio backend");
-    init_audio_backend(engine, &conf);
+    init_audio_backend(&engine, &conf);
 
-    struct audio_backend_start_info info;
-    audio_backend_start(engine, &info);
+    audio_backend_start_info_t info;
+    audio_backend_start(&engine, &info);
 
     signal(SIGINT, terminate);
 
     while (true) { }
 
-    destroy_audio_backend(engine);
+    destroy_audio_backend(&engine);
 }
