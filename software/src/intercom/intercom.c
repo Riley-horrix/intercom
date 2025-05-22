@@ -15,7 +15,9 @@ int intercom_run(int argc, char** argv) {
     init_audio_backend(audio, &config);
 
     struct logic_backend logic;
-    // init_logic_backend(&logic, audio, &config);
-    (void)logic;
+    logic.audio = audio;
+    init_logic_backend(&logic, &config);
+
+    logic_backend_start(&logic);
     return 0;
 }

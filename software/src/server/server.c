@@ -200,6 +200,7 @@ static int handle_message_data(server_t* server, uint8_t* buffer, size_t length,
 }
 
 static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, struct sockaddr* recvAddress, socklen_t sockaddrLen) {
+    info("Handling handshake request");
     if (len < sizeof(struct handshake_request)) {
         return ST_FAIL;
     }

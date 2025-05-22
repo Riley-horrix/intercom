@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
@@ -116,11 +117,13 @@ void destroy_logic_backend(struct logic_backend* logic) {
 /**
  * Begin the logic server, blocking call.
  */
-int logic_backend_start(struct logic_backend* logic, struct server_secrets* secrets) {
-    if (secrets->server_hostname == NULL || secrets->server_port == NULL) {
-        warn("Server hostname or port was NULL");
-        return ST_FAIL;
-    }
+int logic_backend_start(struct logic_backend* logic) {
+    info("Starting logic backend");
+
+    // If not running on raspberry pi then make stdin nonblocking
+#ifndef RASPBERRY_PI
+    fcntl(STDIN_FILENO, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | O_NONBLOCK);
+#endif
 
     // Resolve server host name
     struct addrinfo hints;
@@ -134,8 +137,10 @@ int logic_backend_start(struct logic_backend* logic, struct server_secrets* secr
     int res;
 
     // Find a connection for the TCP Logic server.
-    if ((res = resolve_hostname(secrets->server_hostname, secrets->server_port, &hints, (struct sockaddr*)&logic->serverAddr)) != ST_GOOD) {
-        warn("Failed to resolve hostname %s, port %s", secrets->server_hostname, secrets->server_port);
+    char portStr[6];
+    snprintf(portStr, sizeof(portStr), "%hu", logic->conf->server_port);
+    if ((res = resolve_hostname(logic->conf->server_hostname, portStr, &hints, (struct sockaddr*)&logic->serverAddr)) != ST_GOOD) {
+        warn("Failed to resolve hostname %s, port %hu", logic->conf->server_hostname, logic->conf->server_port);
     }
 
     start_server(logic);
@@ -500,45 +505,31 @@ static int INTERCOM_RPI_FUNCTION wait_for_call_start_gpio(struct state_t** state
 static int INTERCOM_FUNCTION wait_for_call_start(struct state_t** state) {
     struct wait_for_call_state* wait_for_call_state = (struct wait_for_call_state*)*state;
 
-    info("Entered state wait for call start");
-
-    int res;
-
     if (wait_for_call_state->prompt_user) {
         wait_for_call_state->prompt_user = false;
         prompt("Enter a number to call: ");
+        fflush(stdout);
     }
 
     // Nonblocking read of stdin
-    struct pollfd stdinPoll;
-    stdinPoll.fd = STDIN_FILENO;
-    stdinPoll.events = POLLIN;
+    char stdinBuf[16] = { 0 };
+    ssize_t bytesRead = read(STDIN_FILENO, stdinBuf, sizeof(stdinBuf));
 
-    res = poll(&stdinPoll, 1, 0);
+    if (bytesRead == -1) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            stl_warn(errno, "Error when reading stdin");
+        }
+    } else if (bytesRead != 0) {
+        char* endPtr;
+        wait_for_call_state->prompt_user = true;
 
-    if (res != 1) {
-        stl_warn(errno, "Error when polling stdin");
-    } else {
-        if (stdinPoll.revents & POLLIN) {
-            char stdinBuf[16] = { 0 };
-            ssize_t bytesRead = read(STDIN_FILENO, stdinBuf, sizeof(stdinBuf));
+        int phone_number = (int)strtoul(stdinBuf, &endPtr, 10);
 
-            if (bytesRead == -1) {
-                stl_warn(errno, "Failed to read from stdin");
-            }    
+        if (endPtr != stdinBuf) {
+            info("Calling number %d", phone_number);
 
-            char* endPtr;
-
-            wait_for_call_state->prompt_user = true;
-
-            int phone_number = (int)strtoul(stdinBuf, &endPtr, 10);
-
-            if (endPtr != stdinBuf) {
-                info("Calling number %d", phone_number);
-
-                *wait_for_call_state->phone_number = phone_number;
-                *state = wait_for_call_state->make_call;
-            }
+            *wait_for_call_state->phone_number = phone_number;
+            *state = wait_for_call_state->make_call;
         }
     }
 
