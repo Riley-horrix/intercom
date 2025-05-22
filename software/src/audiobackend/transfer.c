@@ -117,12 +117,10 @@ void destroy_transfer_engine(struct transfer_engine* engine) {
 }
 
 int transfer_engine_start(struct transfer_engine* engine, audio_backend_start_info_t* info) {
-    // Move info into the engine
     int res;
-
-    
+    // Move info into the engine
     memcpy(&engine->info, info, sizeof(audio_backend_start_info_t));
-    
+
     // Start the process
     if ((res = pthread_mutex_lock(&engine->startMut))) {
         stl_warn(res, "Could not lock transfer engine mutex");
@@ -370,7 +368,6 @@ static int wait_for_start(struct transfer_engine* engine) {
 
     return ST_GOOD;
 }
-
 
 /**
  * This handler should only handle SIGCHLD.

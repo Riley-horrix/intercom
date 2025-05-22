@@ -18,7 +18,7 @@
 #include <wiringPi.h>
 #endif
 
-#include "args.h"
+#include "utils/args.h"
 #include "common.h"
 #include "audiobackend/audio_backend.h"
 #include "server/packets.h"

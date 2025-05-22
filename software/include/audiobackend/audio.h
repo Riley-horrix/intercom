@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include "miniaudio.h"
-#include "args.h"
+#include "utils/args.h"
 #include "audiobackend/ring_buffer.h"
 
 // Defines for miniaudio

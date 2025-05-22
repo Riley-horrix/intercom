@@ -1,6 +1,7 @@
 # Src files
 SRC_FILES  = src/common.c
-SRC_FILES += src/args.c
+
+SRC_FILES += src/utils/args.c
 
 SRC_FILES += src/audiobackend/audio.c
 SRC_FILES += src/audiobackend/audio_backend.c

@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <libconfig.h>
 #include "common.h"
-#include "args.h"
+#include "utils/args.h"
 
 #define conf_fail() error("One or more critical configs could not be found")
 #define set_if_fail(err, bool) if ((err) != ST_GOOD){ bool = true;}
