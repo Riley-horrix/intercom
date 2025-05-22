@@ -103,6 +103,8 @@ static int no_block_check_receive_call(const struct wait_for_call_state* state, 
 void init_logic_backend(struct logic_backend* logic, intercom_conf_t* config) {
     info("Initialising audio backend");
     init_audio_backend(logic->audio, config);
+
+    logic->conf = config;
 }
 
 void destroy_logic_backend(struct logic_backend* logic) {
@@ -300,37 +302,72 @@ static int handshake_start(struct state_t** state) {
     info("Entered state handshake");
 
     // Send handshake message
-    struct handshake_request req;
-    req.id = HANDSHAKE_REQUEST;
+    uint8_t msgBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct handshake_request)];
+    struct message_wrapper* wrapper = (struct message_wrapper*)msgBuffer;
 
-    strcpy(req.magic, HANDSHAKE_MAGIC);
-    res = send(handshake_state->server.sockfd, (void*)&req, sizeof(req), 0);
+    wrapper->start = MESSAGE_WRAPPER_START;
+    wrapper->id = HANDSHAKE_REQUEST;
+    wrapper->length = sizeof(struct handshake_request);
 
-    if (res != sizeof(req)) {
+    struct handshake_request* msgData = (struct handshake_request*)wrapper->data;
+
+    msgData->phone_number = htons(handshake_state->server.logic->conf->phone_number);
+    strncpy(msgData->magic, HANDSHAKE_MAGIC, sizeof(HANDSHAKE_MAGIC));
+    
+    res = send(handshake_state->server.sockfd, (void*)msgBuffer, sizeof(msgBuffer), 0);
+
+    if (res == -1) {
         stl_warn(errno, "Failed to send handshake request");
         return ST_FAIL;
     }
 
+    if (res != sizeof(msgBuffer)) {
+        warn("Failed to send handshake request");
+        return ST_FAIL;
+    }
+
     // Listen for response
-    struct handshake_request resp;
+    uint8_t respBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct handshake_response)];
+    
+    res = read(handshake_state->server.sockfd, respBuffer, sizeof(respBuffer));
 
-    res = read(handshake_state->server.sockfd, &resp, sizeof(resp));
-
-    if (res != sizeof(req)) {
+    if (res == -1) {
         stl_warn(errno, "Failed to receive handshake request");
         return ST_FAIL;
     }
 
-    if (resp.id != HANDSHAKE_RESPONSE) {
+    if (res != sizeof(respBuffer)) {
+        warn("Size of received handshake response message not valid");
+        return ST_FAIL;
+    }
+
+    wrapper = (struct message_wrapper*)respBuffer;
+
+    if (wrapper->start != MESSAGE_WRAPPER_START) {
+        warn("Message start byte not valid");
+        return ST_FAIL;
+    }
+
+    if (wrapper->id != HANDSHAKE_RESPONSE) {
         warn("Handshake response id invalid");
         return ST_FAIL;
     }
 
+    if (wrapper->length != sizeof(struct handshake_response)) {
+        warn("Received message length invalid for handshake");
+        return ST_FAIL;
+    }
+
+    struct handshake_response* respMsg = (struct handshake_response*)wrapper->data;
+
     // Validate response
-    if (strncmp(HANDSHAKE_MAGIC, resp.magic, sizeof(resp.magic)) != 0) {
+    if (strncmp(HANDSHAKE_MAGIC, respMsg->magic, sizeof(HANDSHAKE_MAGIC)) != 0) {
         warn("Handshake response magic invalid");
         return ST_FAIL;
     }
+
+    // Save the phone number
+    handshake_state->server.logic->conf->phone_number = ntohs(respMsg->phone_number);
 
     // All good so move to next state
     *state = handshake_state->wait_for_call;
@@ -549,7 +586,7 @@ static int execute_external_call(struct state_t** state) {
         return ST_GOOD;
     }
 
-    if (response.id == CALL_REJECTED) {
+    if (response.id == TERMINATE_CALL) {
         warn("Call request rejected");
         return ST_FAIL;
     }

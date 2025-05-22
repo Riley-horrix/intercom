@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <netdb.h>
 #include <errno.h>
 #include <string.h>
@@ -27,7 +28,6 @@ static int handle_message_data(server_t* server, uint8_t* buffer, size_t length,
 
 // Message handling functions
 static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, struct sockaddr* recvAddress, socklen_t sockaddrLen);
-static int handle_handshake_ack(server_t* server, uint8_t* buffer, uint8_t len);
 static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len);
 static int handle_incoming_response(server_t* server, uint8_t* buffer, uint8_t len);
 static int handle_terminate(server_t* server, uint8_t* buffer, uint8_t len);
@@ -56,7 +56,6 @@ int server_run(int argc, char** argv) {
 }
 
 static int init_server(server_t* server) {
-    int sockfd;
     int err;
 
     // Address to receive on
@@ -79,13 +78,15 @@ static int init_server(server_t* server) {
     }
 
     // Bind socket to local port
-    if ((err = bind(sockfd, &recvAddr, sizeof(recvAddr))) != 0) {
+    if ((err = bind(sockfd, (const struct sockaddr*)&recvAddr, sizeof(recvAddr))) != 0) {
         stl_warn(errno, "Failed to bind address to socket");
         close(sockfd);
         return ST_FAIL;
     }
 
     server->sockfd = sockfd;
+    server->phone_count = 0;
+    return ST_GOOD;
 }
 
 /**
@@ -106,10 +107,12 @@ static int start_server(server_t* server) {
     // Once the data is processed, the remaining bytes are shifted to the top
     // of the array, and writeInd updated to point just after it.
     // Then the next set of data is copied in just after the write pointer.
-    int writeInd = 0;
+    size_t writeInd = 0;
 
     // To handle saving the user address
     struct sockaddr_in recvAddress;
+
+    info("Server started");
     
     while (1) {
         socklen_t addressLen = sizeof(recvAddress);
@@ -128,7 +131,7 @@ static int start_server(server_t* server) {
         }
 
         // Iterate over the message buffer
-        int err = handle_message_data(server, msgBuffer, received, &writeInd, &recvAddress, addressLen);
+        handle_message_data(server, msgBuffer, received, &writeInd, (struct sockaddr*)&recvAddress, addressLen);
 
         // If buffer overflow, then shift remaining bytes down
         if (overflow && writeInd < received) {
@@ -161,19 +164,19 @@ static int handle_message_data(server_t* server, uint8_t* buffer, size_t length,
         int err = ST_FAIL;
         switch (msg->id) {
             case HANDSHAKE_REQUEST:
-                err = handleHandshake(server, msg->data, msg->length, recvAddress, sockaddrLen);
+                err = handle_handshake(server, msg->data, msg->length, recvAddress, sockaddrLen);
                 break;
             case CALL_REQUEST:
-                err = handleCallRequest(server, msg->data, msg->length);
+                err = handle_call_request(server, msg->data, msg->length);
                 break;
             case INCOMING_RESPONSE:
-                err = handleIncomingResponse(server, msg->data, msg->length);
+                err = handle_incoming_response(server, msg->data, msg->length);
                 break;
             case TERMINATE_CALL:
-                err = handleTerminate(server, msg->data, msg->length);
+                err = handle_terminate(server, msg->data, msg->length);
                 break;
             case TERMINATE_ACK:
-                err = handleTerminateAck(server, msg->data, msg->length);
+                err = handle_terminate_ack(server, msg->data, msg->length);
                 break;
             default:
                 warn("Unrecognised message id: %x", msg->id);
@@ -209,7 +212,7 @@ static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, stru
     }
 
     // Allocate number
-    uint16_t phoneNumber = allocate_phone_number(server, msg->phone_number);
+    uint16_t phoneNumber = allocate_phone_number(server, ntohs(msg->phone_number));
 
     // Add number to phone list
     server->phone_numbers[server->phone_count++] = phoneNumber;
@@ -226,24 +229,20 @@ static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, stru
 
     struct handshake_response* respData = (struct handshake_response*)respMsg->data;
     strncpy(respData->magic, HANDSHAKE_MAGIC, sizeof(HANDSHAKE_MAGIC));
-    respData->phone_number = phoneNumber;
+    respData->phone_number = htons(phoneNumber);
 
     // TODO Make this non blocking?
-    ssize_t len = sendto(server->sockfd, response, sizeof(response), 0, recvAddress, sockaddrLen);
+    ssize_t sendBytes = sendto(server->sockfd, response, sizeof(response), 0, recvAddress, sockaddrLen);
 
-    if (len == -1) {
+    if (sendBytes == -1) {
         stl_error(errno, "Failed to respond to handshake");
     }
 
-    if (len != sizeof(response)) {
+    if (sendBytes != sizeof(response)) {
         error("Failed to send ful handshake packet");
     }
 
     return ST_GOOD;
-}
-
-static int handle_handshake_ack(server_t* server, uint8_t* buffer, uint8_t len) {
-    return ST_FAIL;
 }
 
 static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len) {
@@ -272,7 +271,7 @@ static uint16_t allocate_phone_number(server_t* server, uint16_t requested) {
         }
 
         if (server->phone_numbers[i] > largest) {
-            largest = largest;
+            largest = server->phone_numbers[i];
         }
     }
 

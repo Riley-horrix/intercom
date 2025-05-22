@@ -39,6 +39,8 @@ struct message_wrapper {
 
 /**
  * Sent by a node to the server to request a handshake.
+ * 
+ * Phone number represents the node's preferred phone number.
  */
 struct handshake_request {
     uint16_t phone_number;

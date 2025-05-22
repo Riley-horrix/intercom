@@ -10,6 +10,7 @@ struct hardware_config {
 };
 
 struct logic_backend {
+    intercom_conf_t* conf;
     audio_backend_t* audio;
     struct sockaddr_in serverAddr;
     struct sockaddr_in udpServerAddr;

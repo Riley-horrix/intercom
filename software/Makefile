@@ -38,6 +38,7 @@ $(BUILD_DIR):
 	mkdir -p $@/src/audiobackend
 	mkdir -p $@/src/server
 	mkdir -p $@/src/intercom
+	mkdir -p $@/src/utils
 	mkdir -p $@/lib
 
 $(BUILD_DIR)/%.o: %.c
