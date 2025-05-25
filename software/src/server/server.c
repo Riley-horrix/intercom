@@ -216,11 +216,13 @@ static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, stru
     uint16_t phoneNumber = allocate_phone_number(server, ntohs(msg->phone_number));
 
     // Add number to phone list
+    if (server->phone_count >= sizeof(server->phone_numbers) / sizeof(*server->phone_numbers)) {
+        server->phone_count--;
+    }
+    
     server->phone_numbers[server->phone_count++] = phoneNumber;
 
     // Send a response back
-    //  sendto(int socket, const void *buffer, size_t length, int flags, const struct sockaddr *dest_addr, socklen_t dest_len);
-
     uint8_t response[MESSAGE_WRAPPER_SIZE + sizeof(struct handshake_response)];
     struct message_wrapper* respMsg = (struct message_wrapper*)response;
 
@@ -240,7 +242,7 @@ static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, stru
     }
 
     if (sendBytes != sizeof(response)) {
-        error("Failed to send ful handshake packet");
+        error("Failed to send full handshake packet");
     }
 
     return ST_GOOD;

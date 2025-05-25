@@ -23,6 +23,8 @@
 
 #define BIT(n) (0x1 << n)
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 enum ST_CODE {
     ST_GOOD            = 0,
     ST_MALLOC_FAIL     = 1,

@@ -64,7 +64,6 @@ struct handshake_response {
  * terminate call for unsuccessful.
  */
 struct call_request {
-    uint8_t id;
     uint16_t phone_number;
 } PACKED_STRUCT;
 
@@ -73,8 +72,6 @@ struct call_request {
  * has been accepted or not.
  */
 struct call_response {
-    uint8_t id;
-    uint8_t accepted; // enum CALL_ENUM
     uint16_t udp_server_port;
 } PACKED_STRUCT;
 
@@ -88,7 +85,6 @@ struct call_response {
  * terminate_call message to reject.
  */
 struct incoming_call {
-    uint8_t id;
     uint16_t from_phone_number;
     uint16_t udp_server_port;
 } PACKED_STRUCT;
@@ -98,23 +94,17 @@ struct incoming_call {
  * call.
  */
 struct incoming_response {
-    uint8_t id;
+    uint16_t from_phone_number;
 } PACKED_STRUCT;
-
 
 /**
  * Sent by server to client or client to server to represent an end of call.
  */
 struct terminate_call {
-    uint8_t id;
     uint8_t err_code;
 } PACKED_STRUCT;
 
-/**
- * Represents a terminate acknowledgement.
- */
-struct terminate_ack {
-    uint8_t id;
-} PACKED_STRUCT;
+
+void* receive_wrapped_message(void* msg, size_t msgLen, size_t desiredLen, uint8_t msgId);
 
 #endif
