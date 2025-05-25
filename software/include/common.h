@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <signal.h>
+#include <string.h>
 
 #ifdef RASPBERRY_PI
 #define INTERCOM_RPI_FUNCTION

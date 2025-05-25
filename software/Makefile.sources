@@ -13,6 +13,8 @@ SRC_FILES += src/logicbackend/logic_backend.c
 SRC_FILES += src/intercom/intercom.c
 
 SRC_FILES += src/server/server.c
+SRC_FILES += src/server/upd_forward.c
+SRC_FILES += src/server/packets.c
 
 # Lib files
 SRC_FILES += lib/miniaudio.c

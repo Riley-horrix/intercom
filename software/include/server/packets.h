@@ -9,14 +9,14 @@
 #define PACKED_STRUCT __attribute((packed))
 
 enum MSG_ID {
-    HANDSHAKE_REQUEST   = 1,
-    HANDSHAKE_RESPONSE  = 2,
-    CALL_REQUEST        = 10,
-    CALL_RESPONSE       = 11,
-    INCOMING_CALL       = 12,
-    INCOMING_RESPONSE   = 13,
-    TERMINATE_CALL      = 20,
-    TERMINATE_ACK       = 21,
+    HANDSHAKE_REQUEST       = 1,
+    HANDSHAKE_RESPONSE      = 2,
+    CALL_REQUEST            = 10,
+    CALL_RESPONSE           = 11,
+    INCOMING_CALL           = 12,
+    INCOMING_RESPONSE       = 13,
+    TERMINATE_CALL          = 20,
+    CLIENT_TERMINATE_CALL   = 21,
 };
 
 enum TERMINATE_CODE {
@@ -98,10 +98,18 @@ struct incoming_response {
 } PACKED_STRUCT;
 
 /**
- * Sent by server to client or client to server to represent an end of call.
+ * Sent by server to client to represent an end or failure call.
  */
 struct terminate_call {
     uint8_t err_code;
+} PACKED_STRUCT;
+
+/**
+ * Sent by client to server to represent they they want to end the call.
+ */
+struct client_terminate_call {
+    uint8_t err_code;
+    uint16_t phone_number;
 } PACKED_STRUCT;
 
 

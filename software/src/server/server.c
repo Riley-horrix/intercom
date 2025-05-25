@@ -9,6 +9,7 @@
 #include "common.h"
 #include "utils/args.h"
 #include "server/packets.h"
+#include "server/upd_forward.h"
 #include "server/server.h"
 
 #define INTERNET_PROTOCOL AF_INET
@@ -28,13 +29,13 @@ static int handle_message_data(server_t* server, uint8_t* buffer, size_t length,
 
 // Message handling functions
 static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, struct sockaddr* recvAddress, socklen_t sockaddrLen);
-static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len);
+static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len, struct sockaddr* recvAddress, socklen_t sockaddrLen);
 static int handle_incoming_response(server_t* server, uint8_t* buffer, uint8_t len);
 static int handle_terminate(server_t* server, uint8_t* buffer, uint8_t len);
-static int handle_terminate_ack(server_t* server, uint8_t* buffer, uint8_t len);
 
 // Misc
 static uint16_t allocate_phone_number(server_t* server, uint16_t requested);
+static uint16_t allocate_udp_port(server_t* server);
 
 int server_run(int argc, char** argv) {
     int err;
@@ -85,7 +86,16 @@ static int init_server(server_t* server) {
     }
 
     server->sockfd = sockfd;
-    server->phone_count = 0;
+    server->client_count = 0;
+    server->ongoing_count = 0;
+    server->pending_count = 0;
+
+    if ((err = init_udp_server(&server->udp_server)) != ST_GOOD) {
+        warn("Failed to initialise udp server");
+        close(sockfd);
+        return ST_FAIL;
+    }
+
     return ST_GOOD;
 }
 
@@ -115,6 +125,7 @@ static int start_server(server_t* server) {
     info("Server started");
     
     while (1) {
+        // Read bytes from the socket
         socklen_t addressLen = sizeof(recvAddress);
         ssize_t received = recvfrom(server->sockfd, msgBuffer + writeInd, MSG_BUFFER_SIZE - writeInd, 0, (struct sockaddr*)&recvAddress, &addressLen);
 
@@ -167,16 +178,13 @@ static int handle_message_data(server_t* server, uint8_t* buffer, size_t length,
                 err = handle_handshake(server, msg->data, msg->length, recvAddress, sockaddrLen);
                 break;
             case CALL_REQUEST:
-                err = handle_call_request(server, msg->data, msg->length);
+                err = handle_call_request(server, msg->data, msg->length, recvAddress, sockaddrLen);
                 break;
             case INCOMING_RESPONSE:
                 err = handle_incoming_response(server, msg->data, msg->length);
                 break;
-            case TERMINATE_CALL:
+            case CLIENT_TERMINATE_CALL:
                 err = handle_terminate(server, msg->data, msg->length);
-                break;
-            case TERMINATE_ACK:
-                err = handle_terminate_ack(server, msg->data, msg->length);
                 break;
             default:
                 warn("Unrecognised message id: %x", msg->id);
@@ -215,12 +223,15 @@ static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, stru
     // Allocate number
     uint16_t phoneNumber = allocate_phone_number(server, ntohs(msg->phone_number));
 
-    // Add number to phone list
-    if (server->phone_count >= sizeof(server->phone_numbers) / sizeof(*server->phone_numbers)) {
-        server->phone_count--;
+    // Add to client list
+    if (server->client_count >= sizeof(server->clients) / sizeof(*server->clients)) {
+        server->client_count--;
     }
     
-    server->phone_numbers[server->phone_count++] = phoneNumber;
+    client_info_t* clientInfo = &server->clients[server->client_count++];
+    clientInfo->phone_number = phoneNumber;
+    memcpy(&clientInfo->address, recvAddress, sockaddrLen);
+    clientInfo->addrLen = sockaddrLen;
 
     // Send a response back
     uint8_t response[MESSAGE_WRAPPER_SIZE + sizeof(struct handshake_response)];
@@ -234,7 +245,6 @@ static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, stru
     strncpy(respData->magic, HANDSHAKE_MAGIC, sizeof(HANDSHAKE_MAGIC));
     respData->phone_number = htons(phoneNumber);
 
-    // TODO Make this non blocking?
     ssize_t sendBytes = sendto(server->sockfd, response, sizeof(response), 0, recvAddress, sockaddrLen);
 
     if (sendBytes == -1) {
@@ -245,36 +255,225 @@ static int handle_handshake(server_t* server, uint8_t* buffer, uint8_t len, stru
         error("Failed to send full handshake packet");
     }
 
+    info("Handshake successful with number: %hu", phoneNumber);
+
     return ST_GOOD;
 }
 
-static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len) {
-    return ST_FAIL;
+static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len, struct sockaddr* recvAddress, socklen_t sockaddrLen) {
+    info("Handling call request");
+    if (len != sizeof(struct call_request)) {
+        warn("Invalid message size for call request");
+        return ST_FAIL;
+    }
+
+    struct call_request* callRequest = (struct call_request*)buffer;
+
+    const uint16_t phoneNumber = ntohs(callRequest->phone_number);
+
+    // First lookup the phone number and check that it is an 'online' number
+    client_info_t* client = NULL;
+
+    for (int i = 0; i < server->client_count; i++) {
+        if (server->clients[i].phone_number == phoneNumber) {
+            info("Phone number found");
+            client = &server->clients[i];
+            break;
+        }
+    }
+
+    if (client == NULL) {
+        info("Phone number not found");
+        return ST_GOOD;
+    }
+
+    // Start the udp server
+    uint16_t updPort = allocate_udp_port(server);
+
+    // Add to pending calls list
+    call_info_t* pendingCall = &server->pending_calls[server->pending_count++];
+    pendingCall->caller = phoneNumber;
+    pendingCall->callee = client->phone_number;
+    pendingCall->port = updPort;
+
+    // Respond to caller
+    uint8_t callRespBuf[MESSAGE_WRAPPER_SIZE + sizeof(struct call_response)];
+    struct message_wrapper* wrapper = (struct message_wrapper*)callRespBuf;
+    
+    wrapper->start = MESSAGE_WRAPPER_START;
+    wrapper->id = CALL_RESPONSE;
+    wrapper->length = sizeof(struct call_response);
+    
+    struct call_response* respMsg = (struct call_response*)wrapper->data;
+    respMsg->udp_server_port = htons(updPort);
+    
+    ssize_t bytesSent = sendto(server->sockfd, callRespBuf, sizeof(callRespBuf), 0, (struct sockaddr*)&client->address, client->addrLen);
+    (void) bytesSent;
+
+    // Call the other number
+    uint8_t incomingCallBuf[MESSAGE_WRAPPER_SIZE + sizeof(struct incoming_call)];
+    wrapper = (struct message_wrapper*)incomingCallBuf;
+    
+    wrapper->start = MESSAGE_WRAPPER_START;
+    wrapper->id = INCOMING_CALL;
+    wrapper->length = sizeof(struct incoming_call);
+    
+    struct incoming_call* incomMsg = (struct incoming_call*)wrapper->data;
+    incomMsg->from_phone_number = htons(phoneNumber);
+    incomMsg->udp_server_port = htons(updPort);
+    
+    bytesSent = sendto(server->sockfd, incomingCallBuf, sizeof(incomingCallBuf), 0, (struct sockaddr*)&client->address, client->addrLen);
+    (void) bytesSent;
+    
+    return ST_GOOD;
 }
 
 static int handle_incoming_response(server_t* server, uint8_t* buffer, uint8_t len) {
-    return ST_FAIL;
+    info("Handling incoming call response");
+    if (len != sizeof(struct incoming_response)) {
+        warn("Invalid message size for incoming response");
+        return ST_FAIL;
+    }
+
+    struct incoming_response* response = (struct incoming_response*)buffer;
+
+    uint16_t phoneNumber = ntohs(response->from_phone_number);
+
+    // Find in pending calls
+    int index = -1;
+    for (int i = 0; i < server->pending_count; i++) {
+        if (server->pending_calls[i].callee == phoneNumber) {
+            index = i;
+            break;
+        }
+    }
+
+    if (index == -1) {
+        warn("Incoming response callee not found");
+        return ST_FAIL;
+    }
+
+    call_info_t* pendingCall = &server->pending_calls[index];
+
+    // Success so first add to ongoing calls
+    call_info_t* ongoingCall = &server->ongoing_calls[server->ongoing_count++];
+    memcpy(ongoingCall, pendingCall, sizeof(call_info_t));
+
+    // Now remove pending call
+    if (index != server->pending_count - 1) {
+        // Swap pending call with the last one to 'remove' it
+        memcpy(pendingCall, &server->pending_calls[server->pending_count - 1], sizeof(call_info_t));
+    }
+    server->pending_count--;
+
+    start_udp_port(&server->udp_server, ongoingCall->port);
+
+    return ST_GOOD;
 }
 
 static int handle_terminate(server_t* server, uint8_t* buffer, uint8_t len) {
-    return ST_FAIL;
-}
+    info("Handling call terminate");
+    if (len != sizeof(struct client_terminate_call)) {
+        warn("Invalid message size for terminate call");
+        return ST_FAIL;
+    }
 
-static int handle_terminate_ack(server_t* server, uint8_t* buffer, uint8_t len) {
-    return ST_FAIL;
+    struct client_terminate_call* clientTerm = (struct client_terminate_call*)buffer;
+
+    info("Terminating call with code: %hu", clientTerm->err_code);
+
+    uint16_t phoneNumber = ntohs(clientTerm->phone_number);
+
+    // Terminate the call
+    call_info_t* callInfo = NULL;
+    bool ongoing = false;
+    for (int i = 0; i < server->ongoing_count; i++) {
+        if (server->ongoing_calls[i].callee == phoneNumber || server->ongoing_calls[i].caller == phoneNumber) {
+            callInfo = server->ongoing_calls + i;
+            ongoing = true;
+            break;
+        }
+    }
+
+    // Check pending calls if not found
+    if (callInfo == NULL) {
+        for (int i = 0; i < server->pending_count; i++) {
+            if (server->pending_calls[i].callee == phoneNumber || server->pending_calls[i].caller == phoneNumber) {
+                callInfo = server->pending_calls + i;
+                break;
+            }
+        }
+    }
+
+    // Send terminate call to other client
+    uint16_t toTerminate = callInfo->callee == phoneNumber ? callInfo->caller : callInfo->callee;
+
+    // Find the client
+    client_info_t* client = NULL;
+    for (int i = 0; i < server->client_count; i++) {
+        if (server->clients[i].phone_number == toTerminate) {
+            client = server->clients + i;
+            break;
+        }
+    }
+
+    if (client == NULL) {
+        warn("Erm what the sigma");
+        return ST_FAIL;
+    }
+
+    uint8_t msgBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct terminate_call)];
+
+    struct message_wrapper* wrapper = (struct message_wrapper*)msgBuffer;
+    wrapper->start = MESSAGE_WRAPPER_START;
+    wrapper->id = TERMINATE_CALL;
+    wrapper->length = sizeof(struct terminate_call);
+
+    struct terminate_call* termCall = (struct terminate_call*)wrapper->data;
+    termCall->err_code = CALL_PUTDOWN;
+
+    ssize_t bytesSent = sendto(server->sockfd, msgBuffer, sizeof(msgBuffer), 0, (struct sockaddr*)&client->address, client->addrLen);
+
+    if (bytesSent == -1) {
+        warn("Failed to send terminate to client");
+        return ST_FAIL;
+    }
+
+    if (bytesSent != sizeof(msgBuffer)) {
+        warn("Full terminate request not sent");
+        return ST_FAIL;
+    }
+
+    // Kill ongoing call
+    if (ongoing) {
+        // First stop the udp port
+        stop_udp_port(&server->udp_server, callInfo->port);
+    }
+
+    // Now destroy the struct
+    call_info_t* callArray = ongoing ? server->ongoing_calls : server->pending_calls;
+    int* count = ongoing ? &server->ongoing_count : &server->pending_count;
+
+    if (callInfo - callArray < *count - 1) {
+        memcpy(callInfo, callArray + *count - 1, sizeof(call_info_t));
+    }
+
+    (*count)--;
+
+    return ST_GOOD;
 }
 
 static uint16_t allocate_phone_number(server_t* server, uint16_t requested) {
     // Check if phone number exists
     bool found = false;
     uint16_t largest = 0;
-    for (int i = 0; i < server->phone_count; i++) {
-        if (requested == server->phone_numbers[i]) {
+    for (int i = 0; i < server->client_count; i++) {
+        if (requested == server->clients[i].phone_number) {
             found = true;
         }
 
-        if (server->phone_numbers[i] > largest) {
-            largest = server->phone_numbers[i];
+        if (server->clients[i].phone_number > largest) {
+            largest = server->clients[i].phone_number;
         }
     }
 
@@ -285,4 +484,8 @@ static uint16_t allocate_phone_number(server_t* server, uint16_t requested) {
 
     // Else just make a new number
     return largest + 1;
+}
+
+static uint16_t allocate_udp_port(server_t* server) {
+    return 9090;
 }

@@ -583,8 +583,13 @@ static int execute_external_call(struct state_t** state) {
 
     res = send(external_call_state->server.sockfd, msgBuffer, sizeof(msgBuffer), 0);
 
-    if (res != sizeof(request)) {
+    if (res == -1) {
         stl_warn(errno, "Failed to send call request over socket");
+        return ST_FAIL;
+    }
+
+    if (res != sizeof(msgBuffer)) {
+        warn("Size of bytes sent for call request is not correct");
         return ST_FAIL;
     }
 
@@ -597,12 +602,13 @@ static int execute_external_call(struct state_t** state) {
 
     if ((msg = receive_wrapped_message(respBuffer, res, sizeof(struct call_response), CALL_RESPONSE)) != NULL) {
         struct call_response* callResp = (struct call_response*)msg;
-        *external_call_state->server_udp_port = htons(callResp->udp_server_port);
+        *external_call_state->server_udp_port = ntohs(callResp->udp_server_port);
         info("Call accepted on udp port: %hu", *external_call_state->server_udp_port);
         *state = external_call_state->call;
         return ST_GOOD;
     } else if ((msg = receive_wrapped_message(respBuffer, res, sizeof(struct call_response), CALL_RESPONSE)) != NULL) {
         struct terminate_call* termCall = (struct terminate_call*)msg;
+
         info("Call terminated with code: %hu", termCall->err_code);
         *state = external_call_state->put_down_call;
         return ST_GOOD;
@@ -664,7 +670,6 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
     audio_backend_start(call_state->server.logic->audio, &info);
     while (true) {
         // Wait for termination
-        struct terminate_call term;
         uint8_t msgBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct terminate_call)];
 
         // Non-blocking read from socket
@@ -678,7 +683,7 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
         }
 
         if (bytesRead != -1) {
-            if (bytesRead != sizeof(term)) {
+            if (bytesRead != sizeof(msgBuffer)) {
                 warn("Wrong number of bytes read for terminate command");
                 goto check_user_terminate;
             }
@@ -706,7 +711,7 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
         }
 
         char stdinBuf[16] = { 0 };
-        ssize_t bytesRead = read(STDIN_FILENO, stdinBuf, sizeof(stdinBuf) - 1);
+        bytesRead = read(STDIN_FILENO, stdinBuf, sizeof(stdinBuf) - 1);
 
         if (bytesRead == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -722,6 +727,29 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
                 info("Terminated call");
                 audio_backend_stop(call_state->server.logic->audio);
                 *state = call_state->put_down_call;
+
+                uint8_t msgSendBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct client_terminate_call)];
+                struct message_wrapper* wrapper = (struct message_wrapper*)msgSendBuffer;
+                
+                wrapper->start = MESSAGE_WRAPPER_START;
+                wrapper->id = CLIENT_TERMINATE_CALL;
+                wrapper->length = sizeof(struct client_terminate_call);
+
+                struct client_terminate_call* termCall = (struct client_terminate_call*)wrapper->data;
+                termCall->err_code = CALL_PUTDOWN;
+                termCall->phone_number = htons(call_state->server.logic->conf->phone_number);
+
+                ssize_t bytesSent = send(call_state->server.sockfd, msgSendBuffer, sizeof(msgSendBuffer), 0);
+
+                if (bytesSent == -1) {
+                    stl_error(errno, "Failed to terminate call");
+                }
+
+                if (bytesSent != sizeof(msgSendBuffer)) {
+                    warn("Failed to send full terminate message");
+                    return ST_FAIL;
+                }
+
                 return ST_GOOD;
             }
         }
