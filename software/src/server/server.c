@@ -269,21 +269,26 @@ static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len, s
 
     struct call_request* callRequest = (struct call_request*)buffer;
 
-    const uint16_t phoneNumber = ntohs(callRequest->phone_number);
+    const uint16_t fromPhoneNumber = ntohs(callRequest->from_phone_number);
+    const uint16_t toPhoneNumber = ntohs(callRequest->to_phone_number);
 
     // First lookup the phone number and check that it is an 'online' number
-    client_info_t* client = NULL;
+    client_info_t* fromClient = NULL;
+    client_info_t* toClient = NULL;
 
     for (int i = 0; i < server->client_count; i++) {
-        if (server->clients[i].phone_number == phoneNumber) {
-            info("Phone number found");
-            client = &server->clients[i];
-            break;
+        if (server->clients[i].phone_number == fromPhoneNumber) {
+            info("From phone number found");
+            fromClient = &server->clients[i];
+        }
+        if (server->clients[i].phone_number == toPhoneNumber) {
+            info("To phone number found");
+            toClient = &server->clients[i];
         }
     }
 
-    if (client == NULL) {
-        info("Phone number not found");
+    if (fromClient == NULL || toClient == NULL) {
+        info("To / from phone number not valid");
         return ST_GOOD;
     }
 
@@ -292,8 +297,8 @@ static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len, s
 
     // Add to pending calls list
     call_info_t* pendingCall = &server->pending_calls[server->pending_count++];
-    pendingCall->caller = phoneNumber;
-    pendingCall->callee = client->phone_number;
+    pendingCall->caller = fromPhoneNumber;
+    pendingCall->callee = toPhoneNumber;
     pendingCall->port = updPort;
 
     // Respond to caller
@@ -307,7 +312,7 @@ static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len, s
     struct call_response* respMsg = (struct call_response*)wrapper->data;
     respMsg->udp_server_port = htons(updPort);
     
-    ssize_t bytesSent = sendto(server->sockfd, callRespBuf, sizeof(callRespBuf), 0, (struct sockaddr*)&client->address, client->addrLen);
+    ssize_t bytesSent = sendto(server->sockfd, callRespBuf, sizeof(callRespBuf), 0, (struct sockaddr*)&fromClient->address, fromClient->addrLen);
     (void) bytesSent;
 
     // Call the other number
@@ -319,10 +324,10 @@ static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len, s
     wrapper->length = sizeof(struct incoming_call);
     
     struct incoming_call* incomMsg = (struct incoming_call*)wrapper->data;
-    incomMsg->from_phone_number = htons(phoneNumber);
+    incomMsg->from_phone_number = htons(fromPhoneNumber);
     incomMsg->udp_server_port = htons(updPort);
     
-    bytesSent = sendto(server->sockfd, incomingCallBuf, sizeof(incomingCallBuf), 0, (struct sockaddr*)&client->address, client->addrLen);
+    bytesSent = sendto(server->sockfd, incomingCallBuf, sizeof(incomingCallBuf), 0, (struct sockaddr*)&toClient->address, toClient->addrLen);
     (void) bytesSent;
     
     return ST_GOOD;
@@ -421,6 +426,8 @@ static int handle_terminate(server_t* server, uint8_t* buffer, uint8_t len) {
         warn("Erm what the sigma");
         return ST_FAIL;
     }
+
+    info("Terminating call for phone number: %hu, from %hu", toTerminate, phoneNumber);
 
     uint8_t msgBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct terminate_call)];
 

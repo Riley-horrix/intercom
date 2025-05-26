@@ -64,7 +64,8 @@ struct handshake_response {
  * terminate call for unsuccessful.
  */
 struct call_request {
-    uint16_t phone_number;
+    uint16_t to_phone_number;
+    uint16_t from_phone_number;
 } PACKED_STRUCT;
 
 /**

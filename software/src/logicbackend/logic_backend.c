@@ -550,13 +550,19 @@ static int INTERCOM_FUNCTION wait_for_call_start(struct state_t** state) {
     }
 
     // Check for incoming calls
-    bool received_call;
-    no_block_check_receive_call(wait_for_call_state, &received_call);
+    bool received_call = false;
+    int err = no_block_check_receive_call(wait_for_call_state, &received_call);
+
+    if (err != ST_GOOD) {
+        warn("Failed to check if receiving a call");
+        return err;
+    }
     
     if (received_call) {
         // Transition to accept call state
         // Assumes necessary variables set in receive call function
         info("Received call, ringing bell");
+        wait_for_call_state->prompt_user = true;
         *state = wait_for_call_state->accept_call;
     }
 
@@ -579,7 +585,8 @@ static int execute_external_call(struct state_t** state) {
 
     struct call_request* request = (struct call_request*)wrapper->data;
 
-    request->phone_number = htons(*external_call_state->number_to_call);
+    request->to_phone_number = htons(*external_call_state->number_to_call);
+    request->from_phone_number = htons(external_call_state->server.logic->conf->phone_number);
 
     res = send(external_call_state->server.sockfd, msgBuffer, sizeof(msgBuffer), 0);
 
@@ -627,15 +634,25 @@ static int INTERCOM_FUNCTION execute_ring(struct state_t** state) {
     info("Ringing the phone");
 
     prompt("Receiving call! Pickup (y/n): ");
+    fflush(stdout);
     char linebuf[1024] = { 0 };
 
     ssize_t bytesRead = 0;
 
-    while (bytesRead != 1 && (linebuf[0] != 'y' && linebuf[0] != 'n')) {
+    while (1) {
         bytesRead = read(STDIN_FILENO, &linebuf, sizeof(linebuf) - 1);
 
-        if (bytesRead == -1) {
+        if (bytesRead == -1 && errno != EAGAIN && errno != EWOULDBLOCK) {
             stl_warn(errno, "Failed to read from stdin");
+        }
+
+        if (bytesRead <= 0) {
+            usleep(10000);
+            continue;
+        }
+
+        if (linebuf[0] == 'n' || linebuf[0] == 'y') {
+            break;
         }
 
         warn("%s is not a vaild argument", linebuf);
@@ -649,6 +666,30 @@ static int INTERCOM_FUNCTION execute_ring(struct state_t** state) {
         return ST_GOOD;
     } else {
         info("Putting down call");
+
+        // Send terminate request
+        uint8_t msgSendBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct client_terminate_call)];
+        struct message_wrapper* wrapper = (struct message_wrapper*)msgSendBuffer;
+        
+        wrapper->start = MESSAGE_WRAPPER_START;
+        wrapper->id = CLIENT_TERMINATE_CALL;
+        wrapper->length = sizeof(struct client_terminate_call);
+
+        struct client_terminate_call* termCall = (struct client_terminate_call*)wrapper->data;
+        termCall->err_code = CALL_PUTDOWN;
+        termCall->phone_number = htons(ring_state->server.logic->conf->phone_number);
+
+        ssize_t bytesSent = send(ring_state->server.sockfd, msgSendBuffer, sizeof(msgSendBuffer), 0);
+
+        if (bytesSent == -1) {
+            stl_error(errno, "Failed to terminate call");
+        }
+
+        if (bytesSent != sizeof(msgSendBuffer)) {
+            warn("Failed to send full terminate message");
+            return ST_FAIL;
+        }
+
         *state = ring_state->put_down_call;
         return ST_GOOD;
     }
