@@ -91,8 +91,8 @@ void init_transfer_engine(struct transfer_engine* engine, ring_buffer_t* playbac
         return;
     } else {
         // Start child thread running main engine
-        (void)transfer_engine_main;
-        transfer_engine_debug(engine);
+        transfer_engine_main(engine);
+        (void)transfer_engine_debug;
             
         // This should never be reached - thread should be killed in main func
         return;
@@ -215,6 +215,7 @@ static void transfer_engine_main(struct transfer_engine* engine) {
 
         recvAddr.sin_port = engine->info.recvPort;
         sendAddr.sin_port = engine->info.sendPort;
+        
         if ((inet_pton(AF_INET, engine->info.recvAddr, &recvAddr.sin_addr))) {
             stl_error(errno, "Failed to convert receive address to number");
         }
@@ -225,7 +226,7 @@ static void transfer_engine_main(struct transfer_engine* engine) {
 
 
         // Bind the receive socket
-        if ((res = connect(sockfd, (struct sockaddr*)&recvAddr, sizeof(recvAddr)))) {
+        if ((res = connect(sockfd, (struct sockaddr*)&recvAddr, sizeof(recvAddr))) == -1) {
             stl_warn(errno, "Failed to connect socket to address in transfer engine");
             goto transfer_engine_cleanup;
         }

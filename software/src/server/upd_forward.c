@@ -1,4 +1,5 @@
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -83,6 +84,7 @@ int stop_udp_port(udp_server_t* server, uint16_t port) {
  */
 static void udp_server_main(udp_port_info_t* portInfo) {
     // List of currently connected addresses
+    info("Child started udp audio server on socket %d", portInfo->sockfd);
     bool init[2];
     struct sockaddr_in addrs[2];
     socklen_t addrLens[2];
@@ -112,6 +114,15 @@ static void udp_server_main(udp_port_info_t* portInfo) {
                 memcpy(&addrs[toAdd], &addr, addrLen);
                 addrLens[toAdd] = addrLen;
                 init[toAdd] = true;
+
+                char addrBuf[INET_ADDRSTRLEN];
+                const char* str = inet_ntop(AF_INET, &addr.sin_addr, addrBuf, INET_ADDRSTRLEN);
+
+                if (str == NULL) {
+                    warn("Issue translating added IPV4 address");
+                } else {
+                    info("UPD audio thread added address %s", addrBuf);
+                }
             }
 
             continue;

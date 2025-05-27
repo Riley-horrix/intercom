@@ -294,6 +294,7 @@ static int handle_call_request(server_t* server, uint8_t* buffer, uint8_t len, s
 
     // Start the udp server
     uint16_t updPort = allocate_udp_port(server);
+    start_udp_port(&server->udp_server, updPort);
 
     // Add to pending calls list
     call_info_t* pendingCall = &server->pending_calls[server->pending_count++];
@@ -370,8 +371,6 @@ static int handle_incoming_response(server_t* server, uint8_t* buffer, uint8_t l
         memcpy(pendingCall, &server->pending_calls[server->pending_count - 1], sizeof(call_info_t));
     }
     server->pending_count--;
-
-    start_udp_port(&server->udp_server, ongoingCall->port);
 
     return ST_GOOD;
 }
