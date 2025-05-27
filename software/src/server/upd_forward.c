@@ -1,4 +1,5 @@
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <unistd.h>
 #include "common.h"
@@ -81,8 +82,50 @@ int stop_udp_port(udp_server_t* server, uint16_t port) {
  * This function returns when the parent kills it.
  */
 static void udp_server_main(udp_port_info_t* portInfo) {
-    while (1) {
+    // List of currently connected addresses
+    bool init[2];
+    struct sockaddr_in addrs[2];
+    socklen_t addrLens[2];
 
+    // Temporary buffer
+    uint8_t msgBuffer[BIT(12)];
+
+    while (1) {
+        struct sockaddr_in addr;
+        socklen_t addrLen;
+
+        ssize_t bytesRead = recvfrom(portInfo->sockfd, msgBuffer, sizeof(msgBuffer), 0, (struct sockaddr*)&addr, &addrLen);
+
+        if (bytesRead == -1) {
+            stl_warn(errno, "Failed to read audio data from client");
+            continue;
+        }
+
+        // Add received from client to array if not there
+        // This loops until both clients connected
+        if (!init[0] || !init[1]) {
+            int toAdd = init[0] ? 1 : 0;
+            int other = toAdd ^ 0x1;
+            
+            // Check not already added with same address
+            if (memcmp(&addr.sin_addr, &addrs[other].sin_addr, sizeof(addr.sin_addr)) != 0) {
+                memcpy(&addrs[toAdd], &addr, addrLen);
+                addrLens[toAdd] = addrLen;
+                init[toAdd] = true;
+            }
+
+            continue;
+        }
+
+        // Send to other client
+        int receiver = memcmp(&addr.sin_addr, &addrs[0].sin_addr, sizeof(addr.sin_addr)) == 0 ? 1 : 0;
+
+        ssize_t bytesSent = sendto(portInfo->sockfd, msgBuffer, bytesRead, 0, (struct sockaddr*)&addrs[receiver], addrLens[receiver]);
+
+        if (bytesSent == -1) {
+            stl_warn(errno, "Failed to send audio data to client");
+            continue;
+        }
     }
 }
 
