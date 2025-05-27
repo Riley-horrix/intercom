@@ -1,13 +1,13 @@
 #ifndef SRC_AUDIO_BACKEND_START_INFO_H
 #define SRC_AUDIO_BACKEND_START_INFO_H
 
+#include <netinet/in.h>
+
 #define IPV4_MAX_STRLEN 16
 
 typedef struct audio_backend_start_info {
-    unsigned short sendPort; // In network format
-    unsigned short recvPort; // In network format
-    char sendAddr[IPV4_MAX_STRLEN];
-    char recvAddr[IPV4_MAX_STRLEN];
+    struct sockaddr_in serverAddr;
+    socklen_t serverAddrLen;
 } audio_backend_start_info_t;
 
 #endif

@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -57,6 +58,7 @@ int start_udp_port(udp_server_t* server, uint16_t port) {
     } else {
         // Child process
         udp_server_main(pInfo);
+        exit(0);
     }
 
     return ST_GOOD;

@@ -13,8 +13,9 @@ struct logic_backend {
     intercom_conf_t* conf;
     audio_backend_t* audio;
     struct sockaddr_in serverAddr;
-    struct sockaddr_in udpServerAddr;
+    socklen_t serverAddrLen;
     struct hardware_config hardware;
+    uint16_t magic;
 };
 
 extern void init_logic_backend(struct logic_backend* logic, intercom_conf_t* config);

@@ -80,10 +80,11 @@ struct execute_call_state {
 #ifndef RASPBERRY_PI
     bool prompt_user;
 #endif
+    uint8_t magic;
 };
 
 static int start_server(struct logic_backend* logic);
-static int resolve_hostname(const char* hostname, const char* hostport, const struct addrinfo* hints, struct sockaddr* result);
+static int resolve_hostname(const char* hostname, const char* hostport, const struct addrinfo* hints, struct sockaddr* result, socklen_t* resultLen);
 
 // Misc time functions
 static unsigned long ts_to_micros(struct timespec* ts);
@@ -142,9 +143,14 @@ int logic_backend_start(struct logic_backend* logic) {
     // Find a connection for the TCP Logic server.
     char portStr[6];
     snprintf(portStr, sizeof(portStr), "%hu", logic->conf->server_port);
-    if ((res = resolve_hostname(logic->conf->server_hostname, portStr, &hints, (struct sockaddr*)&logic->serverAddr)) != ST_GOOD) {
+    if ((res = resolve_hostname(logic->conf->server_hostname, portStr, &hints, (struct sockaddr*)&logic->serverAddr, &logic->serverAddrLen)) != ST_GOOD) {
         warn("Failed to resolve hostname %s, port %hu", logic->conf->server_hostname, logic->conf->server_port);
     }
+    
+    char addrBuf[IPV4_MAX_STRLEN];
+    inet_ntop(AF_INET, &logic->serverAddr.sin_addr, addrBuf, sizeof(addrBuf));
+
+    info("Logic backend connect to addr %s on port %hu", addrBuf, ntohs(logic->serverAddr.sin_port));
 
     start_server(logic);
 
@@ -173,6 +179,11 @@ static int start_server(struct logic_backend* logic) {
         res = ST_FAIL;
         goto logic_server_cleanup;
     }
+
+    char addrBuf[IPV4_MAX_STRLEN];
+    inet_ntop(AF_INET, &logic->serverAddr.sin_addr, addrBuf, sizeof(addrBuf));
+
+    warn("222Tried to connect to addr %s on port %hu", addrBuf, ntohs(logic->serverAddr.sin_port));
 
     // Initialise states
     struct server_state server;
@@ -211,6 +222,7 @@ static int start_server(struct logic_backend* logic) {
     executeCall.server.state.start = &execute_call;
     executeCall.server_udp_port = 0;
     executeCall.prompt_user = true;
+    executeCall.magic = 0xaa;
 
     // Ling together variables
     waitForCall.call_phone_number = &executeCall.other_number;
@@ -260,7 +272,7 @@ static unsigned long __attribute((unused)) ts_to_micros(struct timespec* ts) {
  * the socket type in hints, i.e. if the type is AF_INET, then it must point to
  * an addrinfo_in
  */
-static int resolve_hostname(const char* hostname, const char* hostport, const struct addrinfo* hints, struct sockaddr* result) {
+static int resolve_hostname(const char* hostname, const char* hostport, const struct addrinfo* hints, struct sockaddr* result, socklen_t* resultLength) {
     // Info returned as a linked list, the next item in results.ai_next
     struct addrinfo* foundAddr;
     struct addrinfo* saved;
@@ -283,19 +295,19 @@ static int resolve_hostname(const char* hostname, const char* hostport, const st
 
         // Extract address
         if (foundAddr->ai_family == AF_INET) {
-            *(struct sockaddr_in*)result = *(struct sockaddr_in*)foundAddr->ai_addr;
+            // *(struct sockaddr_in*)result = *(struct sockaddr_in*)foundAddr->ai_addr;
+            memcpy(result, foundAddr->ai_addr, foundAddr->ai_addrlen);
+            *resultLength = foundAddr->ai_addrlen;
         } else {
             warn("Family not recognised in addrinfo");
             foundAddr = foundAddr->ai_next;
             continue;
         }
 
-        *result = *foundAddr->ai_addr;
-
         char addrStr[39];
 
         if (foundAddr->ai_family == AF_INET) {
-            inet_ntop(foundAddr->ai_family, &((struct sockaddr_in*)foundAddr->ai_addr)->sin_addr, addrStr, sizeof(addrStr));
+            inet_ntop(foundAddr->ai_family, &((struct sockaddr_in*)result)->sin_addr, addrStr, sizeof(addrStr));
         }
         
         info("Resolved hostname %s at %s on port %hu, socket type %s", hostname, addrStr, ntohs(((struct sockaddr_in*)foundAddr->ai_addr)->sin_port), foundAddr->ai_socktype == SOCK_STREAM ? "SOCK_STREAM" : "SOCK_DGRAM");
@@ -701,20 +713,44 @@ static int INTERCOM_RPI_FUNCTION execute_call_gpio(struct state_t** state) {
 
 // TODO : Make nonblocking
 static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
+    info("in state execute call");
+
     struct execute_call_state* call_state = (struct execute_call_state*)*state;
 
     // Just start the audio backend
     audio_backend_start_info_t info;
-    info.sendPort = call_state->server_udp_port;
-    inet_ntop(AF_INET, &call_state->server.logic->serverAddr.sin_addr, info.sendAddr, sizeof(call_state->server.logic->serverAddr.sin_addr));
+
+    memcpy(&info.serverAddr, &call_state->server.logic->serverAddr, call_state->server.logic->serverAddrLen);
+    info.serverAddrLen = sizeof(call_state->server.logic->serverAddrLen);
+
+    info.serverAddr.sin_port = htons(call_state->server_udp_port);
+
+    char addrBuf[IPV4_MAX_STRLEN];
+    inet_ntop(AF_INET, &call_state->server.logic->serverAddr, addrBuf, sizeof(addrBuf));
+
+    warn("HELLO! %s on port %hu", addrBuf, call_state->server_udp_port);
+    info("magic : %x", call_state->server.logic->magic);
+
 
     audio_backend_start(call_state->server.logic->audio, &info);
+
     while (true) {
+        info("execute call loop");
+        fflush(stdout);
+
         // Wait for termination
         uint8_t msgBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct terminate_call)];
 
+        info("execute call buffer");
+        fflush(stdout);
+
+
         // Non-blocking read from socket
         ssize_t bytesRead = recv(call_state->server.sockfd, &msgBuffer, sizeof(msgBuffer), MSG_DONTWAIT);
+
+        info("execute call recv");
+        fflush(stdout);
+
 
         if (bytesRead == -1 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
             // Error
@@ -723,6 +759,10 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
             return ST_FAIL;
         }
 
+        info("receicved");
+        fflush(stdout);
+
+
         if (bytesRead != -1) {
             if (bytesRead != sizeof(msgBuffer)) {
                 warn("Wrong number of bytes read for terminate command");
@@ -730,6 +770,8 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
             }
 
             void* msg = receive_wrapped_message(msgBuffer, bytesRead, sizeof(struct terminate_call), TERMINATE_CALL);
+
+            info("received terminate");
 
             if (msg == NULL) {
                 warn("Received message was not terminate call");
@@ -744,6 +786,9 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
             return ST_GOOD;
         }
 
+        info("checking");
+        fflush(stdout);
+
     check_user_terminate:
         if (call_state->prompt_user) {
             call_state->prompt_user = false;
@@ -751,15 +796,20 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
             fflush(stdout);
         }
 
+        info("here");
+
         char stdinBuf[16] = { 0 };
         bytesRead = read(STDIN_FILENO, stdinBuf, sizeof(stdinBuf) - 1);
+
+        info("here2");
 
         if (bytesRead == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 stl_warn(errno, "Error when reading stdin");
             }
         } else if (bytesRead != 0) {
-            if (bytesRead != 1 || stdinBuf[0] != 'q') {
+            info("bytes read from stdin");
+            if (stdinBuf[0] != 'q') {
                 warn("%s is an invalid argument", stdinBuf);
                 memset(stdinBuf, 0, sizeof(stdinBuf));
                 call_state->prompt_user = true;

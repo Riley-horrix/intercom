@@ -1,4 +1,5 @@
 #include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 #include <semaphore.h>
 #include <errno.h>
@@ -77,7 +78,7 @@ void init_transfer_engine(struct transfer_engine* engine, ring_buffer_t* playbac
         stl_error(err, "Failed to register signal handler in transfer engine");
     }
 
-    // For the process
+    // Fork the process
     pid_t pid = fork();
 
     if (pid == -1) {
@@ -95,7 +96,7 @@ void init_transfer_engine(struct transfer_engine* engine, ring_buffer_t* playbac
         (void)transfer_engine_debug;
             
         // This should never be reached - thread should be killed in main func
-        return;
+        exit(0);
     }
 }
 
@@ -164,14 +165,14 @@ int transfer_engine_stop(struct transfer_engine* engine) {
 }
 
 static void transfer_engine_main(struct transfer_engine* engine) {
-    struct sockaddr_in recvAddr;
-    struct sockaddr_in savedRecvAddr;
-    struct sockaddr_in sendAddr;
-
-    recvAddr.sin_family = AF_INET;
-    sendAddr.sin_family = AF_INET;
-
     int res;
+
+    struct sockaddr_in serverAddr;
+    socklen_t serverAddrLen;
+
+    memcpy(&serverAddr, &engine->info.serverAddr, engine->info.serverAddrLen);
+
+    serverAddrLen = engine->info.serverAddrLen;
 
     while (true) {
         if (!engine->started) {
@@ -213,27 +214,20 @@ static void transfer_engine_main(struct transfer_engine* engine) {
         }
 #endif
 
-        recvAddr.sin_port = engine->info.recvPort;
-        sendAddr.sin_port = engine->info.sendPort;
-        
-        if ((inet_pton(AF_INET, engine->info.recvAddr, &recvAddr.sin_addr))) {
-            stl_error(errno, "Failed to convert receive address to number");
-        }
-
-        if ((inet_pton(AF_INET, engine->info.sendAddr, &sendAddr.sin_addr))) {
-            stl_error(errno, "Failed to convert send address to number");
-        }
-
-
         // Bind the receive socket
-        if ((res = connect(sockfd, (struct sockaddr*)&recvAddr, sizeof(recvAddr))) == -1) {
+        if ((res = connect(sockfd, (struct sockaddr*)&serverAddr, serverAddrLen)) == -1) {
             stl_warn(errno, "Failed to connect socket to address in transfer engine");
+
+            char addrBuf[IPV4_MAX_STRLEN];
+            inet_ntop(AF_INET, &serverAddr.sin_addr, addrBuf, sizeof(addrBuf));
+
+            warn("Tried to connect to addr %s on port %hu", addrBuf, ntohs(serverAddr.sin_port));
+
             goto transfer_engine_cleanup;
         }
 
         ssize_t written;
         size_t len;
-        socklen_t addrSize;
         void* buffer;
         while (engine->started) {
             // Request size for the ring buffer
@@ -245,7 +239,7 @@ static void transfer_engine_main(struct transfer_engine* engine) {
 
             // Do a non-blocking read from the socket
             // Write the data into the ring buffer
-            written = recvfrom(sockfd, buffer, len, 0, (struct sockaddr*)&savedRecvAddr, &addrSize);
+            written = recvfrom(sockfd, buffer, len, 0, NULL, NULL);
             if (written == -1) {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
                     // Bad error 
@@ -271,7 +265,7 @@ transfer_engine_do_write:
             }
 
             // Send data from the ring buffer
-            written = sendto(sockfd, buffer, len, 0, (const struct sockaddr*)&sendAddr, sizeof(sendAddr));
+            written = sendto(sockfd, buffer, len, 0, (const struct sockaddr*)&serverAddr, serverAddrLen);
             if (written == -1) {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
                     // Bad error 

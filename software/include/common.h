@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <signal.h>
+#include <unistd.h>
 #include <string.h>
 
 #ifdef RASPBERRY_PI
@@ -14,9 +15,9 @@
 #define INTERCOM_FUNCTION
 #endif
 
-#define error(fmt, ...) (fprintf(stderr, "\e[31m[ERROR]\e[0m " fmt "!\n" , ##__VA_ARGS__), raise(SIGTERM))
-#define warn(fmt, ...) fprintf(stdout, "\e[93m[WARN]\e[0m " fmt "!\n" , ##__VA_ARGS__)
-#define info(fmt, ...) fprintf(stdout, "\e[32m[info]\e[0m " fmt ".\n" , ##__VA_ARGS__)
+#define error(fmt, ...) (fprintf(stderr, "\e[31m[ERROR: %d]\e[0m " fmt "!\n", getpid() , ##__VA_ARGS__), raise(SIGTERM))
+#define warn(fmt, ...) fprintf(stdout, "\e[93m[WARN: %d]\e[0m " fmt "!\n" , getpid() , ##__VA_ARGS__)
+#define info(fmt, ...) fprintf(stdout, "\e[32m[info: %d]\e[0m " fmt ".\n", getpid() , ##__VA_ARGS__)
 #define prompt(fmt, ...) fprintf(stdout, "\e[96m" fmt "\e[0m" , ##__VA_ARGS__)
 
 #define stl_error(code, fmt, ...) error(fmt ", cause %d: %s" , ##__VA_ARGS__, code, strerror(code))
