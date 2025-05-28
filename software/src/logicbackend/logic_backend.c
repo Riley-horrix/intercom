@@ -174,16 +174,11 @@ static int start_server(struct logic_backend* logic) {
     }
 
     // Connect the receive socket
-    if ((res = connect(sockfd, (struct sockaddr*)&logic->serverAddr, sizeof(logic->serverAddr)))) {
+    if ((res = connect(sockfd, (const struct sockaddr*)&logic->serverAddr, sizeof(logic->serverAddr)))) {
         stl_warn(errno, "Failed to connect to server");
         res = ST_FAIL;
         goto logic_server_cleanup;
     }
-
-    char addrBuf[IPV4_MAX_STRLEN];
-    inet_ntop(AF_INET, &logic->serverAddr.sin_addr, addrBuf, sizeof(addrBuf));
-
-    warn("222Tried to connect to addr %s on port %hu", addrBuf, ntohs(logic->serverAddr.sin_port));
 
     // Initialise states
     struct server_state server;
@@ -646,7 +641,7 @@ static int INTERCOM_FUNCTION execute_ring(struct state_t** state) {
     info("Ringing the phone");
 
     prompt("Receiving call! Pickup (y/n): ");
-    fflush(stdout);
+
     char linebuf[1024] = { 0 };
 
     ssize_t bytesRead = 0;
@@ -713,44 +708,25 @@ static int INTERCOM_RPI_FUNCTION execute_call_gpio(struct state_t** state) {
 
 // TODO : Make nonblocking
 static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
-    info("in state execute call");
-
     struct execute_call_state* call_state = (struct execute_call_state*)*state;
+    info("Executing a call to number %d", call_state->other_number);
 
     // Just start the audio backend
     audio_backend_start_info_t info;
 
     memcpy(&info.serverAddr, &call_state->server.logic->serverAddr, call_state->server.logic->serverAddrLen);
-    info.serverAddrLen = sizeof(call_state->server.logic->serverAddrLen);
+    info.serverAddrLen = call_state->server.logic->serverAddrLen;
 
     info.serverAddr.sin_port = htons(call_state->server_udp_port);
-
-    char addrBuf[IPV4_MAX_STRLEN];
-    inet_ntop(AF_INET, &call_state->server.logic->serverAddr, addrBuf, sizeof(addrBuf));
-
-    warn("HELLO! %s on port %hu", addrBuf, call_state->server_udp_port);
-    info("magic : %x", call_state->server.logic->magic);
-
 
     audio_backend_start(call_state->server.logic->audio, &info);
 
     while (true) {
-        info("execute call loop");
-        fflush(stdout);
-
         // Wait for termination
         uint8_t msgBuffer[MESSAGE_WRAPPER_SIZE + sizeof(struct terminate_call)];
 
-        info("execute call buffer");
-        fflush(stdout);
-
-
         // Non-blocking read from socket
         ssize_t bytesRead = recv(call_state->server.sockfd, &msgBuffer, sizeof(msgBuffer), MSG_DONTWAIT);
-
-        info("execute call recv");
-        fflush(stdout);
-
 
         if (bytesRead == -1 && (errno != EAGAIN && errno != EWOULDBLOCK)) {
             // Error
@@ -759,10 +735,6 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
             return ST_FAIL;
         }
 
-        info("receicved");
-        fflush(stdout);
-
-
         if (bytesRead != -1) {
             if (bytesRead != sizeof(msgBuffer)) {
                 warn("Wrong number of bytes read for terminate command");
@@ -770,8 +742,6 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
             }
 
             void* msg = receive_wrapped_message(msgBuffer, bytesRead, sizeof(struct terminate_call), TERMINATE_CALL);
-
-            info("received terminate");
 
             if (msg == NULL) {
                 warn("Received message was not terminate call");
@@ -786,29 +756,20 @@ static int INTERCOM_FUNCTION execute_call(struct state_t** state) {
             return ST_GOOD;
         }
 
-        info("checking");
-        fflush(stdout);
-
     check_user_terminate:
         if (call_state->prompt_user) {
             call_state->prompt_user = false;
             prompt("Press q to end call: ");
-            fflush(stdout);
         }
-
-        info("here");
 
         char stdinBuf[16] = { 0 };
         bytesRead = read(STDIN_FILENO, stdinBuf, sizeof(stdinBuf) - 1);
-
-        info("here2");
 
         if (bytesRead == -1) {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 stl_warn(errno, "Error when reading stdin");
             }
         } else if (bytesRead != 0) {
-            info("bytes read from stdin");
             if (stdinBuf[0] != 'q') {
                 warn("%s is an invalid argument", stdinBuf);
                 memset(stdinBuf, 0, sizeof(stdinBuf));

@@ -165,19 +165,18 @@ int transfer_engine_stop(struct transfer_engine* engine) {
 }
 
 static void transfer_engine_main(struct transfer_engine* engine) {
-    int res;
+    // int res;
 
     struct sockaddr_in serverAddr;
     socklen_t serverAddrLen;
-
-    memcpy(&serverAddr, &engine->info.serverAddr, engine->info.serverAddrLen);
-
-    serverAddrLen = engine->info.serverAddrLen;
 
     while (true) {
         if (!engine->started) {
             wait_for_start(engine);
         }
+
+        memcpy(&serverAddr, &engine->info.serverAddr, engine->info.serverAddrLen);
+        serverAddrLen = engine->info.serverAddrLen;
 
         // Socket information in engine->info now valid
         // Initialise sockets
@@ -214,17 +213,17 @@ static void transfer_engine_main(struct transfer_engine* engine) {
         }
 #endif
 
-        // Bind the receive socket
-        if ((res = connect(sockfd, (struct sockaddr*)&serverAddr, serverAddrLen)) == -1) {
-            stl_warn(errno, "Failed to connect socket to address in transfer engine");
+        // // Bind the receive socket
+        // if ((res = connect(sockfd, (struct sockaddr*)&serverAddr, serverAddrLen)) == -1) {
+        //     stl_warn(errno, "Failed to connect socket to address in transfer engine");
 
-            char addrBuf[IPV4_MAX_STRLEN];
-            inet_ntop(AF_INET, &serverAddr.sin_addr, addrBuf, sizeof(addrBuf));
+        //     char addrBuf[IPV4_MAX_STRLEN];
+        //     inet_ntop(AF_INET, &serverAddr.sin_addr, addrBuf, sizeof(addrBuf));
 
-            warn("Tried to connect to addr %s on port %hu", addrBuf, ntohs(serverAddr.sin_port));
+        //     warn("Tried to connect to addr %s on port %hu", addrBuf, ntohs(serverAddr.sin_port));
 
-            goto transfer_engine_cleanup;
-        }
+        //     goto transfer_engine_cleanup;
+        // }
 
         ssize_t written;
         size_t len;
