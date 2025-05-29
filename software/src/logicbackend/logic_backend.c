@@ -108,7 +108,6 @@ static int no_block_check_receive_call(const struct wait_for_call_state* state, 
 void init_logic_backend(struct logic_backend* logic, intercom_conf_t* config) {
     info("Initialising audio backend");
     init_audio_backend(logic->audio, config);
-
     logic->conf = config;
 }
 
@@ -141,8 +140,9 @@ int logic_backend_start(struct logic_backend* logic) {
     int res;
 
     // Find a connection for the TCP Logic server.
-    char portStr[6];
+    char portStr[20] = { 0 };
     snprintf(portStr, sizeof(portStr), "%hu", logic->conf->server_port);
+    
     if ((res = resolve_hostname(logic->conf->server_hostname, portStr, &hints, (struct sockaddr*)&logic->serverAddr, &logic->serverAddrLen)) != ST_GOOD) {
         warn("Failed to resolve hostname %s, port %hu", logic->conf->server_hostname, logic->conf->server_port);
     }

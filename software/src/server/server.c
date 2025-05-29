@@ -60,15 +60,16 @@ static int init_server(server_t* server) {
     int err;
 
     // Address to receive on
-    struct sockaddr_in recvAddr;
-    recvAddr.sin_family = INTERNET_PROTOCOL;
-    recvAddr.sin_port = htons(server->conf->server_port);
     
-    inet_pton(INTERNET_PROTOCOL, LOCAL_ADDR, &recvAddr.sin_addr);
+    server->server_addr.sin_family = AF_INET;
+    server->server_addr.sin_port = htons(server->conf->server_port);
+    server->server_addr_len = sizeof(server->server_addr);
+
+    inet_pton(AF_INET, LOCAL_ADDR, &server->server_addr.sin_addr);
 
     int sockfd = socket(
-        INTERNET_PROTOCOL, 
-        SOCK_DGRAM,
+        AF_INET, 
+        SOCK_STREAM,
         0);
 
     // Check for valid socket id
@@ -79,11 +80,13 @@ static int init_server(server_t* server) {
     }
 
     // Bind socket to local port
-    if ((err = bind(sockfd, (const struct sockaddr*)&recvAddr, sizeof(recvAddr))) != 0) {
+    if ((err = bind(sockfd, (const struct sockaddr*)&server->server_addr, server->server_addr_len)) != 0) {
         stl_warn(errno, "Failed to bind address to socket");
         close(sockfd);
         return ST_FAIL;
     }
+
+    info("Server opened on sockfd %d", sockfd);
 
     server->sockfd = sockfd;
     server->client_count = 0;
@@ -123,11 +126,32 @@ static int start_server(server_t* server) {
     struct sockaddr_in recvAddress;
 
     info("Server started");
+
+    int connectionfd = 0;
+
+    int error = listen(server->sockfd, 128);
+
+    if (error == -1) {
+        stl_warn(errno, "Failed to listen to the socket");
+        return ST_FAIL;
+    }
     
     while (1) {
-        // Read bytes from the socket
+        // Read bytes from the socket if not in an overflow state
         socklen_t addressLen = sizeof(recvAddress);
-        ssize_t received = recvfrom(server->sockfd, msgBuffer + writeInd, MSG_BUFFER_SIZE - writeInd, 0, (struct sockaddr*)&recvAddress, &addressLen);
+
+        if (!overflow) {
+            connectionfd = accept(server->sockfd, (struct sockaddr*)&server->server_addr, &server->server_addr_len);
+            
+            if (connectionfd == -1) {
+                stl_warn(errno, "Failed to accept connection on socket %d", server->sockfd);
+                continue;
+            }
+            
+            info("Accepted a connection");
+        }
+
+        ssize_t received = recvfrom(connectionfd, msgBuffer + writeInd, MSG_BUFFER_SIZE - writeInd, 0, (struct sockaddr*)&recvAddress, &addressLen);
 
         writeInd = 0;
 
@@ -137,9 +161,7 @@ static int start_server(server_t* server) {
         }
 
         // Check to see if the buffer has 'overflowed'
-        if (received == MSG_BUFFER_SIZE) {
-            overflow = true;
-        }
+        overflow = received == MSG_BUFFER_SIZE;
 
         // Iterate over the message buffer
         handle_message_data(server, msgBuffer, received, &writeInd, (struct sockaddr*)&recvAddress, addressLen);
@@ -148,8 +170,6 @@ static int start_server(server_t* server) {
         if (overflow && writeInd < received) {
             memmove(msgBuffer, msgBuffer + writeInd, received - writeInd);
         }
-
-        overflow = false;
     }
 
     return ST_GOOD;

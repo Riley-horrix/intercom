@@ -28,6 +28,8 @@ typedef struct server {
     int client_count;
     int pending_count;
     int ongoing_count;
+    struct sockaddr_in server_addr;
+    socklen_t server_addr_len;
     client_info_t clients[10];
     call_info_t pending_calls[10];
     call_info_t ongoing_calls[10];

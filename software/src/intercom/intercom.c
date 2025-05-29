@@ -12,7 +12,6 @@ int intercom_run(int argc, char** argv) {
 
     info("Initialising audio backend");
     audio_backend_t* audio = create_shared_memory(sizeof(*audio));
-    init_audio_backend(audio, &config);
 
     struct logic_backend logic;
     logic.magic = 0xaabb;
